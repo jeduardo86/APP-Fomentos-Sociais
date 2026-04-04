@@ -1,18 +1,18 @@
 export const categoriaDescriptions = {
   Assistencia: 'Fomento social e apoio a programas de bem-estar.',
   Desportos: 'Incentivo a atividades esportivas.',
-  Saude: 'Investimentos em programas de saude publica.',
-  Educacao: 'Projetos de educacao, pesquisa e formacao.',
-  SegurancaPublica: 'Apoio a acoes e projetos de seguranca publica.',
-  DesenvolvimentoSocial: 'Projetos voltados a inclusao e desenvolvimento social.',
+  Saude: 'Investimentos em programas de saúde pública.',
+  Educacao: 'Projetos de educação, pesquisa e formação.',
+  SegurancaPublica: 'Apoio a ações e projetos de segurança pública.',
+  DesenvolvimentoSocial: 'Projetos voltados à inclusão e desenvolvimento social.',
 }
 
 export const categoriaOptions = [
-  { value: 'Assistencia', label: 'Assistencia' },
+  { value: 'Assistencia', label: 'Assistência' },
   { value: 'Desportos', label: 'Desportos' },
-  { value: 'Saude', label: 'Saude' },
-  { value: 'Educacao', label: 'Educacao' },
-  { value: 'SegurancaPublica', label: 'Seguranca Publica' },
+  { value: 'Saude', label: 'Saúde' },
+  { value: 'Educacao', label: 'Educação' },
+  { value: 'SegurancaPublica', label: 'Segurança Pública' },
   { value: 'DesenvolvimentoSocial', label: 'Desenvolvimento social' },
 ]
 

@@ -37,14 +37,14 @@ import {
 
 const operationalTabs = [
   { id: 'gerencial', label: 'Painel gerencial' },
-  { id: 'destinacao', label: 'Destinacoes' },
-  { id: 'pagamento', label: 'Confirmacao de pagamento' },
+  { id: 'destinacao', label: 'Destinações' },
+  { id: 'pagamento', label: 'Confirmação de pagamento' },
 ]
 
 const cadastroTabs = [
   { id: 'empresas', label: 'Cadastro de empresas' },
   { id: 'entidades', label: 'Cadastro de entidades' },
-  { id: 'usuarios', label: 'Cadastro de usuarios' },
+  { id: 'usuarios', label: 'Cadastro de usuários' },
 ]
 
 function getValorFomentoFromProcess(item) {
@@ -77,7 +77,24 @@ function formatCurrencyCompact(value) {
   return formatCurrency(amount)
 }
 
+function getTodayInputDate() {
+  const now = new Date()
+  const localDate = new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
+  return localDate.toISOString().split('T')[0]
+}
+
+function competenciaFromDate(isoDate) {
+  if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
+    return ''
+  }
+
+  const [year, month] = isoDate.split('-')
+  return `${month}/${year}`
+}
+
 function App() {
+  const todayInputDate = getTodayInputDate()
+
   const [authLoading, setAuthLoading] = useState(true)
   const [authBusy, setAuthBusy] = useState(false)
   const [user, setUser] = useState(null)
@@ -98,12 +115,13 @@ function App() {
 
   const [empresaSelecionada, setEmpresaSelecionada] = useState('')
   const [selectedProcessIds, setSelectedProcessIds] = useState([])
+  const [selectedProcessValues, setSelectedProcessValues] = useState({})
   const [filtroProcessoDestinacao, setFiltroProcessoDestinacao] = useState('')
 
   const [destForm, setDestForm] = useState({
-    solicitacaoData: '',
+    solicitacaoData: todayInputDate,
     entidadeId: '',
-    competencia: '',
+    competencia: competenciaFromDate(todayInputDate),
   })
 
   const [pagamentoForm, setPagamentoForm] = useState({
@@ -115,6 +133,8 @@ function App() {
 
   const [empresaForm, setEmpresaForm] = useState({ razaoSocial: '', cnpj: '' })
   const [entidadeForm, setEntidadeForm] = useState({ nome: '', categoria: 'Assistencia' })
+  const [isEntidadeModalOpen, setIsEntidadeModalOpen] = useState(false)
+  const [isSavingEntidadeModal, setIsSavingEntidadeModal] = useState(false)
   const [usersList, setUsersList] = useState([])
   const [roleBusyUserId, setRoleBusyUserId] = useState('')
   const [accessBusyUserId, setAccessBusyUserId] = useState('')
@@ -133,14 +153,14 @@ function App() {
     : cadastroTabs.filter((tab) => tab.id === 'empresas' || tab.id === 'entidades')
 
   function handleRealtimeAccessError(error) {
-    const message = error?.message || 'Nao foi possivel acompanhar atualizacoes em tempo real.'
+    const message = error?.message || 'Não foi possível acompanhar atualizações em tempo real.'
     toast.error(message, { id: 'firestore-realtime-error' })
 
     const rawMessage = String(error?.message || '')
     const lostAccess =
       rawMessage.includes('permission-denied') ||
       rawMessage.includes('unauthenticated') ||
-      rawMessage.toLowerCase().includes('sem permissao')
+      rawMessage.toLowerCase().includes('sem permissão')
 
     if (lostAccess) {
       logout().catch(() => {})
@@ -176,7 +196,7 @@ function App() {
         stopProfile = subscribeUserProfile(user.uid, setUserProfile, handleRealtimeAccessError)
       })
       .catch((error) => {
-        toast.error(error?.message || 'Nao foi possivel carregar perfil de acesso.')
+        toast.error(error?.message || 'Não foi possível carregar perfil de acesso.')
         logout().catch(() => {})
       })
 
@@ -236,7 +256,7 @@ function App() {
 
     logout()
       .catch(() => {
-        toast.error('Nao foi possivel encerrar a sessao bloqueada.')
+        toast.error('Não foi possível encerrar a sessão bloqueada.')
       })
       .finally(() => {
         setIsRevokingBlockedSession(false)
@@ -293,12 +313,61 @@ function App() {
       .sort((a, b) => String(a.processoId || '').localeCompare(String(b.processoId || '')))
   }, [empresaSelecionada, baseCsv, totalDestinadoPorProcesso])
 
+  const processosEmpresaById = useMemo(
+    () =>
+      processosEmpresa.reduce((acc, item) => {
+        acc[item.processoId] = item
+        return acc
+      }, {}),
+    [processosEmpresa],
+  )
+
+  useEffect(() => {
+    setSelectedProcessValues((current) => {
+      const next = {}
+
+      selectedProcessIds.forEach((processoId) => {
+        const processo = processosEmpresaById[processoId]
+        if (!processo) {
+          return
+        }
+
+        const saldoDisponivel = Number(processo.saldoDisponivel || 0)
+        const currentValue = Number(current[processoId] || 0)
+        const normalizedValue =
+          currentValue > 0
+            ? Math.min(Number(currentValue.toFixed(2)), saldoDisponivel)
+            : Number(saldoDisponivel.toFixed(2))
+
+        next[processoId] = normalizedValue
+      })
+
+      if (JSON.stringify(next) === JSON.stringify(current)) {
+        return current
+      }
+
+      return next
+    })
+  }, [selectedProcessIds, processosEmpresaById])
+
+  function getValorSelecionadoParaProcesso(item) {
+    const processoId = String(item?.processoId || '')
+    const saldoDisponivel = Number(item?.saldoDisponivel || 0)
+    const valorSelecionado = Number(selectedProcessValues[processoId] || 0)
+
+    if (valorSelecionado <= 0 || saldoDisponivel <= 0) {
+      return 0
+    }
+
+    return Math.min(Number(valorSelecionado.toFixed(2)), saldoDisponivel)
+  }
+
   const totalSelecionadoParaDestinar = useMemo(
     () =>
       processosEmpresa
         .filter((item) => selectedProcessIds.includes(item.processoId))
-        .reduce((acc, item) => acc + Number(item.saldoDisponivel || 0), 0),
-    [processosEmpresa, selectedProcessIds],
+        .reduce((acc, item) => acc + getValorSelecionadoParaProcesso(item), 0),
+    [processosEmpresa, selectedProcessIds, selectedProcessValues],
   )
 
   const processosEmpresaFiltrados = useMemo(() => {
@@ -371,7 +440,7 @@ function App() {
     const mapa = new Map()
 
     baseCsv.forEach((processo) => {
-      const empresa = String(processo.empresa || '').trim() || 'Empresa nao informada'
+      const empresa = String(processo.empresa || '').trim() || 'Empresa não informada'
       const processoId = String(processo.processoId || '').trim()
 
       if (!mapa.has(empresa)) {
@@ -401,7 +470,7 @@ function App() {
     })
 
     destinacoes.forEach((destinacao) => {
-      const empresa = String(destinacao.empresa || '').trim() || 'Empresa nao informada'
+      const empresa = String(destinacao.empresa || '').trim() || 'Empresa não informada'
 
       if (!mapa.has(empresa)) {
         mapa.set(empresa, {
@@ -429,11 +498,42 @@ function App() {
 
   const categoriaTexto = categoriaDescriptions[entidadeForm.categoria] || ''
 
+  function handleIniciarDestinacaoPorEmpresa(empresa) {
+    const normalizedEmpresa = String(empresa || '').trim()
+
+    if (!normalizedEmpresa || !empresasComProcessos.includes(normalizedEmpresa)) {
+      toast.error('Não foi possível abrir a destinação para esta empresa.')
+      return
+    }
+
+    setActiveMenu('operacional')
+    setActiveTab('destinacao')
+    setEmpresaSelecionada(normalizedEmpresa)
+    setSelectedProcessIds([])
+    setSelectedProcessValues({})
+    setFiltroProcessoDestinacao('')
+  }
+
+  useEffect(() => {
+    if (!isEntidadeModalOpen) {
+      return undefined
+    }
+
+    function handleEscapeClose(event) {
+      if (event.key === 'Escape') {
+        setIsEntidadeModalOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', handleEscapeClose)
+    return () => window.removeEventListener('keydown', handleEscapeClose)
+  }, [isEntidadeModalOpen])
+
   async function handleSyncCsv(event) {
     event?.preventDefault?.()
 
     if (!user) {
-      toast.error('Autenticacao obrigatoria para sincronizar dados.')
+      toast.error('Autenticação obrigatória para sincronizar dados.')
       return
     }
 
@@ -452,13 +552,13 @@ function App() {
     try {
       const records = await fetchAndParseCsv(csvUrl)
       if (!records.length) {
-        throw new Error('CSV sem registros validos.')
+        throw new Error('CSV sem registros válidos.')
       }
 
       await syncBaseCsv(records, user.uid)
       toast.success(`Base CSV sincronizada: ${records.length} processos.`)
     } catch (error) {
-      toast.error(error.message || 'Nao foi possivel sincronizar o CSV.')
+      toast.error(error.message || 'Não foi possível sincronizar o CSV.')
     } finally {
       setIsSyncing(false)
     }
@@ -483,7 +583,7 @@ function App() {
       await saveCsvLinkConfig(csvUrl.trim(), user.uid)
       toast.success('Link do CSV salvo com sucesso.')
     } catch {
-      toast.error('Nao foi possivel salvar o link do CSV.')
+      toast.error('Não foi possível salvar o link do CSV.')
     } finally {
       setIsSavingCsvLink(false)
     }
@@ -493,22 +593,22 @@ function App() {
     event.preventDefault()
 
     if (!user) {
-      toast.error('Autenticacao obrigatoria para registrar destinacao.')
+      toast.error('Autenticação obrigatória para registrar destinação.')
       return
     }
 
     if (!empresaSelecionada) {
-      toast.error('Selecione a empresa para destinacao.')
+      toast.error('Selecione a empresa para destinação.')
       return
     }
 
     if (!selectedProcessIds.length) {
-      toast.error('Selecione ao menos um processo para destinacao.')
+      toast.error('Selecione ao menos um processo para destinação.')
       return
     }
 
     if (!destForm.solicitacaoData || !destForm.entidadeId || !destForm.competencia) {
-      toast.error('Preencha os campos obrigatorios da destinacao.')
+      toast.error('Preencha os campos obrigatórios da destinação.')
       return
     }
 
@@ -517,13 +617,29 @@ function App() {
       selectedProcessIds.includes(item.processoId),
     )
 
-    if (!processosSelecionados.length) {
-      toast.error('Nenhum processo valido selecionado para destinacao.')
+    const processosSelecionadosComValor = processosSelecionados.map((processo) => ({
+      ...processo,
+      valorDestinadoSelecionado: getValorSelecionadoParaProcesso(processo),
+    }))
+
+    if (!processosSelecionadosComValor.length) {
+      toast.error('Nenhum processo válido selecionado para destinação.')
+      return
+    }
+
+    const processoComValorInvalido = processosSelecionadosComValor.find(
+      (processo) =>
+        Number(processo.valorDestinadoSelecionado || 0) <= 0 ||
+        Number(processo.valorDestinadoSelecionado || 0) > Number(processo.saldoDisponivel || 0),
+    )
+
+    if (processoComValorInvalido) {
+      toast.error('Revise os valores destinados. O valor deve ser maior que zero e respeitar o saldo.')
       return
     }
 
     try {
-      for (const processo of processosSelecionados) {
+      for (const processo of processosSelecionadosComValor) {
         await createDestinacao({
           processoId: processo.processoId,
           termo: processo.termo,
@@ -533,7 +649,7 @@ function App() {
           solicitacaoData: destForm.solicitacaoData,
           entidadeId: entidade?.id || '',
           entidadeNome: entidade?.nome || '',
-          valorDestinado: processo.saldoDisponivel,
+          valorDestinado: processo.valorDestinadoSelecionado,
           competencia: destForm.competencia,
           statusPagamento: 'pendente',
           pgtoData: '',
@@ -547,11 +663,17 @@ function App() {
         })
       }
 
-      setDestForm({ solicitacaoData: '', entidadeId: '', competencia: '' })
+      const nextDate = getTodayInputDate()
+      setDestForm({
+        solicitacaoData: nextDate,
+        entidadeId: '',
+        competencia: competenciaFromDate(nextDate),
+      })
       setSelectedProcessIds([])
-      toast.success(`Destinacoes registradas: ${processosSelecionados.length}`)
+      setSelectedProcessValues({})
+      toast.success(`Destinações registradas: ${processosSelecionadosComValor.length}`)
     } catch (error) {
-      toast.error(error.message || 'Falha ao salvar a destinacao.')
+      toast.error(error.message || 'Falha ao salvar a destinação.')
     }
   }
 
@@ -559,7 +681,7 @@ function App() {
     event.preventDefault()
 
     if (!user) {
-      toast.error('Autenticacao obrigatoria para confirmar pagamento.')
+      toast.error('Autenticação obrigatória para confirmar pagamento.')
       return
     }
 
@@ -586,7 +708,7 @@ function App() {
       setPagamentoForm({ destinacaoId: '', pgtoData: '', formaPgto: 'PIX', valorPago: 0 })
       toast.success('Pagamento registrado.')
     } catch (error) {
-      toast.error(error.message || 'Nao foi possivel confirmar o pagamento.')
+      toast.error(error.message || 'Não foi possível confirmar o pagamento.')
     }
   }
 
@@ -594,14 +716,14 @@ function App() {
     event.preventDefault()
 
     if (!user) {
-      toast.error('Autenticacao obrigatoria para cadastrar empresa.')
+      toast.error('Autenticação obrigatória para cadastrar empresa.')
       return
     }
 
     const cnpjLimpo = sanitizeCNPJ(empresaForm.cnpj)
 
     if (!empresaForm.razaoSocial.trim() || cnpjLimpo.length !== 14) {
-      toast.error('Informe razao social e CNPJ valido.')
+      toast.error('Informe razão social e CNPJ válido.')
       return
     }
 
@@ -617,25 +739,40 @@ function App() {
       setEmpresaForm({ razaoSocial: '', cnpj: '' })
       toast.success('Empresa cadastrada.')
     } catch {
-      toast.error('Nao foi possivel cadastrar empresa.')
+      toast.error('Não foi possível cadastrar empresa.')
     }
   }
 
-  async function handleSalvarEntidade(event) {
+  async function handleSalvarEntidade(event, options = {}) {
     event.preventDefault()
 
+    const { closeModalOnSuccess = false, selectOnDestinacao = false } = options
+
     if (!user) {
-      toast.error('Autenticacao obrigatoria para cadastrar entidade.')
+      toast.error('Autenticação obrigatória para cadastrar entidade.')
       return
     }
 
-    if (!entidadeForm.nome.trim() || !entidadeForm.categoria) {
+    const normalizedEntidadeNome = entidadeForm.nome.trim().toLowerCase()
+
+    if (!normalizedEntidadeNome || !entidadeForm.categoria) {
       toast.error('Informe nome e categoria da entidade.')
       return
     }
 
+    const entidadeDuplicada = entidades.some(
+      (entry) => String(entry?.nome || '').trim().toLowerCase() === normalizedEntidadeNome,
+    )
+
+    if (entidadeDuplicada) {
+      toast.error('Já existe uma entidade cadastrada com este nome.')
+      return
+    }
+
+    setIsSavingEntidadeModal(true)
+
     try {
-      await createEntidade({
+      const createdEntidade = await createEntidade({
         nome: entidadeForm.nome.trim(),
         categoria: entidadeForm.categoria,
         descricaoCategoria: categoriaDescriptions[entidadeForm.categoria] || '',
@@ -644,10 +781,22 @@ function App() {
         createdBy: user.uid,
         updatedBy: user.uid,
       })
+
+      if (selectOnDestinacao && createdEntidade?.id) {
+        setDestForm((current) => ({ ...current, entidadeId: createdEntidade.id }))
+      }
+
       setEntidadeForm({ nome: '', categoria: 'Assistencia' })
+
+      if (closeModalOnSuccess) {
+        setIsEntidadeModalOpen(false)
+      }
+
       toast.success('Entidade cadastrada.')
     } catch {
-      toast.error('Nao foi possivel cadastrar entidade.')
+      toast.error('Não foi possível cadastrar entidade.')
+    } finally {
+      setIsSavingEntidadeModal(false)
     }
   }
 
@@ -663,10 +812,10 @@ function App() {
 
     try {
       await loginWithEmail(authForm.email.trim(), authForm.password)
-      toast.success('Credenciais validadas. Verificando permissao de acesso...')
+      toast.success('Credenciais validadas. Verificando permissão de acesso...')
       setAuthForm({ email: '', password: '' })
     } catch (error) {
-      toast.error(error.message || 'Falha na autenticacao.')
+      toast.error(error.message || 'Falha na autenticação.')
     } finally {
       setAuthBusy(false)
     }
@@ -677,7 +826,7 @@ function App() {
 
     try {
       await loginWithGoogle()
-      toast.success('Login realizado. Verificando permissao de acesso...')
+      toast.success('Login realizado. Verificando permissão de acesso...')
     } catch (error) {
       toast.error(error.message || 'Falha no login com Google.')
     } finally {
@@ -688,9 +837,9 @@ function App() {
   async function handleLogout() {
     try {
       await logout()
-      toast.success('Sessao encerrada.')
+      toast.success('Sessão encerrada.')
     } catch {
-      toast.error('Nao foi possivel encerrar a sessao.')
+      toast.error('Não foi possível encerrar a sessão.')
     }
   }
 
@@ -701,7 +850,7 @@ function App() {
     }
 
     if (targetUserId === user.uid) {
-      toast.error('Nao e permitido alterar o proprio perfil.')
+      toast.error('Não é permitido alterar o próprio perfil.')
       return
     }
 
@@ -724,7 +873,7 @@ function App() {
     }
 
     if (targetUserId === user.uid) {
-      toast.error('Nao e permitido bloquear o proprio acesso.')
+      toast.error('Não é permitido bloquear o próprio acesso.')
       return
     }
 
@@ -744,7 +893,7 @@ function App() {
     event.preventDefault()
 
     if (!user || !isAdmin) {
-      toast.error('Apenas administradores podem cadastrar usuarios.')
+      toast.error('Apenas administradores podem cadastrar usuários.')
       return
     }
 
@@ -752,7 +901,7 @@ function App() {
     const normalizedPassword = newUserForm.password.trim()
 
     if (!normalizedEmail || !normalizedPassword) {
-      toast.error('Informe email e senha para o novo usuario.')
+      toast.error('Informe email e senha para o novo usuário.')
       return
     }
 
@@ -766,7 +915,7 @@ function App() {
     )
 
     if (emailAlreadyRegistered) {
-      toast.error('Este email ja esta cadastrado.')
+      toast.error('Este email já está cadastrado.')
       return
     }
 
@@ -782,9 +931,9 @@ function App() {
       )
 
       setNewUserForm({ email: '', password: '', role: 'OPERADOR' })
-      toast.success('Usuario cadastrado com sucesso.')
+      toast.success('Usuário cadastrado com sucesso.')
     } catch (error) {
-      toast.error(error.message || 'Nao foi possivel cadastrar o usuario.')
+      toast.error(error.message || 'Não foi possível cadastrar o usuário.')
     } finally {
       setIsCreatingUser(false)
     }
@@ -794,7 +943,7 @@ function App() {
     return (
       <div className="relative min-h-screen overflow-hidden bg-app-pattern px-4 py-8 text-zinc-900 sm:px-6 lg:px-10">
         <div className="mx-auto max-w-lg rounded-3xl border border-slate-200/80 bg-white/90 p-8 text-center shadow-soft">
-          <p className="text-sm font-medium text-zinc-600">Validando sessao...</p>
+          <p className="text-sm font-medium text-zinc-600">Validando sessão...</p>
         </div>
       </div>
     )
@@ -814,7 +963,7 @@ function App() {
               Entrar no sistema de fomentos
             </h1>
             <p className="mt-3 text-sm text-zinc-600">
-              Apenas usuarios autenticados podem escrever em destinacoes, entidades e empresas.
+              Apenas usuários autenticados podem escrever em destinações, entidades e empresas.
             </p>
 
             <form className="mt-6 space-y-4" onSubmit={handleAuthSubmit}>
@@ -865,7 +1014,7 @@ function App() {
             </button>
 
             <p className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-center text-sm text-zinc-600">
-              Novos acessos sao criados somente por administradores.
+              Novos acessos são criados somente por administradores.
             </p>
           </section>
         </main>
@@ -878,7 +1027,7 @@ function App() {
       <div className="relative min-h-screen overflow-hidden bg-app-pattern px-4 py-8 text-zinc-900 sm:px-6 lg:px-10">
         <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
         <div className="mx-auto max-w-lg rounded-3xl border border-slate-200/80 bg-white/90 p-8 text-center shadow-soft">
-          <p className="text-sm font-medium text-zinc-600">Validando permissao de acesso...</p>
+          <p className="text-sm font-medium text-zinc-600">Validando permissão de acesso...</p>
         </div>
       </div>
     )
@@ -894,7 +1043,7 @@ function App() {
         <aside className="hidden w-72 shrink-0 lg:sticky lg:top-6 lg:block">
           <div className="panel panel-soft space-y-5">
             <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-cyan-700">Navegacao</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-cyan-700">Navegação</p>
               <h2 className="mt-2 text-2xl font-semibold text-zinc-900">Menu principal</h2>
             </div>
 
@@ -918,12 +1067,12 @@ function App() {
                 className={activeMenu === 'configuracoes' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
                 onClick={() => setActiveMenu('configuracoes')}
               >
-                Configuracoes
+                Configurações
               </button>
             </nav>
 
             <div className="rounded-2xl border border-cyan-200 bg-cyan-50/80 px-4 py-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-cyan-700">Operacao ativa</p>
+              <p className="text-[11px] uppercase tracking-[0.16em] text-cyan-700">Operação ativa</p>
               <p className="mt-1 break-all text-sm font-semibold text-cyan-900">{user.email || user.uid}</p>
               <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-700">
                 Perfil: {isAdmin ? 'ADMIN' : 'OPERADOR'}
@@ -944,17 +1093,17 @@ function App() {
           <section className="panel panel-hero">
             <div className="flex flex-wrap items-end justify-between gap-5">
               <div>
-                <p className="text-xs uppercase tracking-[0.22em] text-cyan-700">Gestao de fomentos sociais</p>
+                <p className="text-xs uppercase tracking-[0.22em] text-cyan-700">Gestão de fomentos sociais</p>
                 <h1 className="headline mt-3 text-3xl font-semibold tracking-tight text-zinc-900 sm:text-4xl">
                   Controle de Destinação de Fomentos Sociais
                 </h1>
                 <p className="mt-3 max-w-2xl text-sm text-zinc-600 sm:text-base">
-                  Use o menu para alternar entre a operacao diaria e as configuracoes do sistema.
+                  Use o menu para alternar entre a operação diária e as configurações do sistema.
                 </p>
               </div>
 
               <div className="rounded-2xl border border-cyan-200 bg-cyan-50/80 px-4 py-3 text-right lg:hidden">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-cyan-700">Operacao ativa</p>
+                <p className="text-[11px] uppercase tracking-[0.16em] text-cyan-700">Operação ativa</p>
                 <p className="mt-1 break-all text-sm font-semibold text-cyan-900">{user.email || user.uid}</p>
                 <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-700">
                   Perfil: {isAdmin ? 'ADMIN' : 'OPERADOR'}
@@ -970,7 +1119,7 @@ function App() {
                 </strong>
               </article>
               <article className="card-metric">
-                <p>Total destinado em transito</p>
+                <p>Total destinado em trânsito</p>
                 <strong title={formatCurrency(totalDestinadoEmTransito)}>
                   {formatCurrencyCompact(totalDestinadoEmTransito)}
                 </strong>
@@ -986,7 +1135,7 @@ function App() {
                 <strong title={formatCurrency(saldoAPagar)}>{formatCurrencyCompact(saldoAPagar)}</strong>
               </article>
               <article className="card-metric">
-                <p>Saldo sem destinacao</p>
+                <p>Saldo sem destinação</p>
                 <strong title={formatCurrency(saldoSemDestinacao)}>
                   {formatCurrencyCompact(saldoSemDestinacao)}
                 </strong>
@@ -996,7 +1145,7 @@ function App() {
 
           {activeMenu === 'operacional' && (
             <article className="panel panel-soft sm:p-6">
-              <nav className="rounded-2xl border border-slate-200/70 bg-white/70 p-2" aria-label="Navegacao operacional">
+              <nav className="rounded-2xl border border-slate-200/70 bg-white/70 p-2" aria-label="Navegação operacional">
                 <div className="flex flex-wrap gap-2">
                   {operationalTabs.map((tab) => (
                     <button
@@ -1013,7 +1162,7 @@ function App() {
 
               {activeTab === 'destinacao' && (
                 <section className="mt-5 space-y-5 animate-in">
-                  <h2 className="text-lg font-semibold text-zinc-900">Formulario de destinacao</h2>
+                  <h2 className="text-lg font-semibold text-zinc-900">Formulário de destinação</h2>
 
                   <div>
                     <label className="field-label" htmlFor="empresaSelecionada">
@@ -1026,6 +1175,7 @@ function App() {
                       onChange={(event) => {
                         setEmpresaSelecionada(event.target.value)
                         setSelectedProcessIds([])
+                        setSelectedProcessValues({})
                       }}
                     >
                       <option value="">Selecione</option>
@@ -1043,7 +1193,7 @@ function App() {
                       <p className="font-medium text-zinc-900">{empresaSelecionada || '--'}</p>
                     </div>
                     <div>
-                      <p className="text-zinc-500">Processos disponiveis</p>
+                      <p className="text-zinc-500">Processos disponíveis</p>
                       <p className="font-medium text-zinc-900">{processosEmpresa.length}</p>
                     </div>
                     <div>
@@ -1058,16 +1208,26 @@ function App() {
 
                   <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-semibold text-zinc-800">Processos para destinacao</p>
+                      <p className="text-sm font-semibold text-zinc-800">Processos para destinação</p>
                       {processosEmpresaFiltrados.length > 0 && (
                         <button
                           type="button"
                           className="text-xs font-semibold text-cyan-700 hover:underline"
                           onClick={() =>
-                            setSelectedProcessIds((current) => {
-                              const merged = new Set([...current, ...processosEmpresaFiltrados.map((item) => item.processoId)])
-                              return Array.from(merged)
-                            })
+                            {
+                              const processIds = processosEmpresaFiltrados.map((item) => item.processoId)
+                              const merged = new Set([...selectedProcessIds, ...processIds])
+                              setSelectedProcessIds(Array.from(merged))
+                              setSelectedProcessValues((current) => {
+                                const next = { ...current }
+                                processosEmpresaFiltrados.forEach((item) => {
+                                  if (!next[item.processoId] || next[item.processoId] <= 0) {
+                                    next[item.processoId] = Number(item.saldoDisponivel.toFixed(2))
+                                  }
+                                })
+                                return next
+                              })
+                            }
                           }
                         >
                           Marcar todos
@@ -1085,7 +1245,7 @@ function App() {
                     )}
 
                     {processosEmpresa.length === 0 && (
-                      <p className="text-sm text-zinc-500">Nenhum processo com saldo disponivel para a empresa.</p>
+                      <p className="text-sm text-zinc-500">Nenhum processo com saldo disponível para a empresa.</p>
                     )}
 
                     {processosEmpresa.length > 0 && processosEmpresaFiltrados.length === 0 && (
@@ -1106,8 +1266,19 @@ function App() {
                                   onChange={(event) => {
                                     setSelectedProcessIds((current) => {
                                       if (event.target.checked) {
+                                        setSelectedProcessValues((values) => ({
+                                          ...values,
+                                          [item.processoId]: Number(item.saldoDisponivel.toFixed(2)),
+                                        }))
                                         return [...current, item.processoId]
                                       }
+
+                                      setSelectedProcessValues((values) => {
+                                        const next = { ...values }
+                                        delete next[item.processoId]
+                                        return next
+                                      })
+
                                       return current.filter((id) => id !== item.processoId)
                                     })
                                   }}
@@ -1116,8 +1287,39 @@ function App() {
                                   <span className="font-semibold text-zinc-900">{item.processoId}</span>
                                   <span className="ml-2 text-zinc-500">{item.termo || 'Sem termo'}</span>
                                   <span className="mt-1 block text-emerald-700">
-                                    Saldo disponivel: {formatCurrency(item.saldoDisponivel)}
+                                    Saldo disponível: {formatCurrency(item.saldoDisponivel)}
                                   </span>
+                                  {checked && (
+                                    <span className="mt-2 block">
+                                      <span className="mb-1 block text-xs font-medium text-zinc-600">
+                                        Valor destinado para este processo
+                                      </span>
+                                      <NumericFormat
+                                        className="field-input"
+                                        thousandSeparator="."
+                                        decimalSeparator=","
+                                        prefix="R$ "
+                                        decimalScale={2}
+                                        fixedDecimalScale
+                                        allowNegative={false}
+                                        value={selectedProcessValues[item.processoId] || 0}
+                                        onValueChange={(values) => {
+                                          const value = Math.max(
+                                            0,
+                                            Math.min(
+                                              Number(values.floatValue || 0),
+                                              Number(item.saldoDisponivel || 0),
+                                            ),
+                                          )
+
+                                          setSelectedProcessValues((current) => ({
+                                            ...current,
+                                            [item.processoId]: Number(value.toFixed(2)),
+                                          }))
+                                        }}
+                                      />
+                                    </span>
+                                  )}
                                 </span>
                               </label>
                             </li>
@@ -1130,7 +1332,7 @@ function App() {
                   <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSalvarDestinacao}>
                     <div>
                       <label className="field-label" htmlFor="solicitacaoData">
-                        Data de solicitacao
+                        Data de solicitação
                       </label>
                       <input
                         id="solicitacaoData"
@@ -1138,15 +1340,34 @@ function App() {
                         type="date"
                         value={destForm.solicitacaoData}
                         onChange={(event) =>
-                          setDestForm((current) => ({ ...current, solicitacaoData: event.target.value }))
+                          setDestForm((current) => {
+                            const solicitacaoData = event.target.value
+                            return {
+                              ...current,
+                              solicitacaoData,
+                              competencia: competenciaFromDate(solicitacaoData),
+                            }
+                          })
                         }
                       />
                     </div>
 
                     <div>
-                      <label className="field-label" htmlFor="entidadeId">
-                        Entidade
-                      </label>
+                      <div className="mb-1 flex items-center justify-between gap-2">
+                        <label className="field-label mb-0" htmlFor="entidadeId">
+                          Entidade
+                        </label>
+                        <button
+                          type="button"
+                          className="text-xs font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline"
+                          onClick={() => {
+                            setEntidadeForm({ nome: '', categoria: 'Assistencia' })
+                            setIsEntidadeModalOpen(true)
+                          }}
+                        >
+                          Nova entidade
+                        </button>
+                      </div>
                       <select
                         id="entidadeId"
                         className="field-input"
@@ -1166,7 +1387,7 @@ function App() {
 
                     <div>
                       <label className="field-label" htmlFor="competencia">
-                        Competencia (MM/AAAA)
+                        Competência (MM/AAAA)
                       </label>
                       <input
                         id="competencia"
@@ -1184,7 +1405,7 @@ function App() {
 
                     <div className="sm:col-span-2">
                       <button className="btn-primary w-full" type="submit">
-                        Salvar destinacao
+                        Salvar destinação
                       </button>
                     </div>
                   </form>
@@ -1193,13 +1414,13 @@ function App() {
 
               {activeTab === 'pagamento' && (
                 <section className="mt-5 space-y-4 animate-in">
-                  <h2 className="text-lg font-semibold text-zinc-900">Confirmacao de pagamento</h2>
-                  <p className="text-sm text-zinc-600">A lista exibe destinacoes em aberto (pendente ou parcial).</p>
+                  <h2 className="text-lg font-semibold text-zinc-900">Confirmação de pagamento</h2>
+                  <p className="text-sm text-zinc-600">A lista exibe destinações em aberto (pendente ou parcial).</p>
 
                   <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleConfirmarPagamento}>
                     <div className="sm:col-span-2">
                       <label className="field-label" htmlFor="destinacaoId">
-                        Destinacao pendente
+                        Destinação pendente
                       </label>
                       <select
                         id="destinacaoId"
@@ -1291,7 +1512,7 @@ function App() {
                           <th className="px-4 py-3">Destinado</th>
                           <th className="px-4 py-3">Pago</th>
                           <th className="px-4 py-3">Saldo</th>
-                          <th className="px-4 py-3">Solicitacao</th>
+                          <th className="px-4 py-3">Solicitação</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1326,7 +1547,7 @@ function App() {
                 <section className="mt-5 space-y-4 animate-in">
                   <h2 className="text-lg font-semibold text-zinc-900">Painel gerencial por empresa</h2>
                   <p className="text-sm text-zinc-600">
-                    Visao consolidada para acompanhamento de saldo a destinar e saldo a pagar por empresa.
+                    Visão consolidada para acompanhamento de saldo a destinar e saldo a pagar por empresa.
                   </p>
 
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -1365,14 +1586,23 @@ function App() {
                         {resumoEmpresas.length === 0 && (
                           <tr>
                             <td colSpan="7" className="px-4 py-4 text-zinc-500">
-                              Sem dados para exibicao.
+                              Sem dados para exibição.
                             </td>
                           </tr>
                         )}
 
                         {resumoEmpresas.map((item) => (
                           <tr key={item.empresa} className="border-t border-slate-100/80 even:bg-slate-50/70">
-                            <td className="px-4 py-3 font-medium text-zinc-900">{item.empresa}</td>
+                            <td className="px-4 py-3 font-medium text-zinc-900">
+                              <button
+                                type="button"
+                                className="w-full text-left font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline"
+                                onClick={() => handleIniciarDestinacaoPorEmpresa(item.empresa)}
+                                title="Abrir nova destinação para esta empresa"
+                              >
+                                {item.empresa}
+                              </button>
+                            </td>
                             <td className="px-4 py-3 text-zinc-600">{formatCurrency(item.totalFomento)}</td>
                             <td className="px-4 py-3 text-zinc-600">{formatCurrency(item.totalDestinado)}</td>
                             <td className="px-4 py-3 text-zinc-600">{formatCurrency(item.totalPago)}</td>
@@ -1411,7 +1641,7 @@ function App() {
 
               {!isAdmin && activeCadastroTab === 'usuarios' && (
                 <section className="mt-5 animate-in rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                  Seu perfil atual nao possui permissao para acessar os cadastros.
+                  Seu perfil atual não possui permissão para acessar os cadastros.
                 </section>
               )}
 
@@ -1424,7 +1654,7 @@ function App() {
                     <h2 className="text-lg font-semibold text-zinc-900">Cadastro de empresas</h2>
                     <div>
                       <label className="field-label" htmlFor="razaoSocial">
-                        Razao social
+                        Razão social
                       </label>
                       <input
                         id="razaoSocial"
@@ -1514,7 +1744,7 @@ function App() {
 
               {isAdmin && activeCadastroTab === 'usuarios' && (
                 <section className="mt-5 animate-in space-y-4">
-                  <h2 className="text-lg font-semibold text-zinc-900">Cadastro de usuarios</h2>
+                  <h2 className="text-lg font-semibold text-zinc-900">Cadastro de usuários</h2>
                   <p className="text-sm text-zinc-600">
                     Promova ou reverta perfis entre OPERADOR e admin, e bloqueie ou libere o acesso.
                   </p>
@@ -1558,7 +1788,7 @@ function App() {
 
                     <div className="sm:col-span-2">
                       <label className="field-label" htmlFor="novoUsuarioSenha">
-                        Senha provisoria
+                        Senha provisória
                       </label>
                       <input
                         id="novoUsuarioSenha"
@@ -1568,7 +1798,7 @@ function App() {
                         onChange={(event) =>
                           setNewUserForm((current) => ({ ...current, password: event.target.value }))
                         }
-                        placeholder="Minimo 6 caracteres"
+                        placeholder="Mínimo 6 caracteres"
                       />
                     </div>
 
@@ -1587,7 +1817,7 @@ function App() {
                           <th className="px-4 py-3">UID</th>
                           <th className="px-4 py-3">Perfil</th>
                           <th className="px-4 py-3">Acesso</th>
-                          <th className="px-4 py-3 text-right">Acoes</th>
+                          <th className="px-4 py-3 text-right">Ações</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1643,7 +1873,7 @@ function App() {
                                     {isRoleBusy
                                       ? 'Atualizando perfil...'
                                       : isSelf
-                                        ? 'Usuario atual'
+                                        ? 'Usuário atual'
                                         : `Tornar ${nextRole.toUpperCase()}`}
                                   </button>
 
@@ -1656,7 +1886,7 @@ function App() {
                                     {isAccessBusy
                                       ? 'Atualizando acesso...'
                                       : isSelf
-                                        ? 'Usuario atual'
+                                        ? 'Usuário atual'
                                         : isBlocked
                                           ? 'Liberar acesso'
                                           : 'Bloquear acesso'}
@@ -1677,14 +1907,14 @@ function App() {
           {activeMenu === 'configuracoes' && (
             <section>
               <article className="panel panel-soft">
-                <h2 className="text-lg font-semibold text-zinc-900">Configuracao do CSV</h2>
+                <h2 className="text-lg font-semibold text-zinc-900">Configuração do CSV</h2>
                 <p className="mt-1 text-sm text-zinc-600">
-                  Defina e salve o link publico para sincronizacao da base.
+                  Defina e salve o link público para sincronização da base.
                 </p>
 
                 <form className="mt-5 space-y-3" onSubmit={handleSalvarCsvLink}>
                   <label className="field-label" htmlFor="csvUrl">
-                    Link publico do CSV
+                    Link público do CSV
                   </label>
                   <input
                     id="csvUrl"
@@ -1710,13 +1940,13 @@ function App() {
 
                 {!isAdmin && (
                   <p className="mt-2 text-xs font-medium text-amber-700">
-                    Somente usuarios com perfil ADMIN podem alterar configuracoes.
+                    Somente usuários com perfil ADMIN podem alterar configurações.
                   </p>
                 )}
 
                 <div className="mt-5 rounded-2xl border border-slate-200/70 bg-slate-100/80 p-4 text-sm text-zinc-700">
                   <p>Processos em cache: {baseCsv.length}</p>
-                  <p>Destinacoes registradas: {destinacoes.length}</p>
+                  <p>Destinações registradas: {destinacoes.length}</p>
                   <p>Pagamentos pendentes: {pendentes.length}</p>
                 </div>
               </article>
@@ -1724,6 +1954,91 @@ function App() {
           )}
         </section>
       </main>
+
+      {isEntidadeModalOpen && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-zinc-900/45 p-4">
+          <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-zinc-900">Cadastrar nova entidade</h2>
+                <p className="mt-1 text-sm text-zinc-600">
+                  Cadastre sem sair da destinação. O formulário preenchido permanece na tela.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-slate-50"
+                onClick={() => setIsEntidadeModalOpen(false)}
+              >
+                Fechar
+              </button>
+            </div>
+
+            <form
+              className="space-y-4"
+              onSubmit={(event) =>
+                handleSalvarEntidade(event, {
+                  closeModalOnSuccess: true,
+                  selectOnDestinacao: true,
+                })
+              }
+            >
+              <div>
+                <label className="field-label" htmlFor="modalEntidadeNome">
+                  Nome da entidade
+                </label>
+                <input
+                  id="modalEntidadeNome"
+                  className="field-input"
+                  value={entidadeForm.nome}
+                  onChange={(event) =>
+                    setEntidadeForm((current) => ({ ...current, nome: event.target.value }))
+                  }
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="modalCategoriaEntidade">
+                  Categoria
+                </label>
+                <select
+                  id="modalCategoriaEntidade"
+                  className="field-input"
+                  value={entidadeForm.categoria}
+                  onChange={(event) =>
+                    setEntidadeForm((current) => ({ ...current, categoria: event.target.value }))
+                  }
+                >
+                  {categoriaOptions.map((item) => (
+                    <option key={item.value} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900">
+                {categoriaTexto}
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
+                  onClick={() => setIsEntidadeModalOpen(false)}
+                  disabled={isSavingEntidadeModal}
+                >
+                  Cancelar
+                </button>
+                <button className="btn-primary" type="submit" disabled={isSavingEntidadeModal}>
+                  {isSavingEntidadeModal ? 'Cadastrando...' : 'Cadastrar e usar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <nav
         className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 p-3 backdrop-blur lg:hidden"
@@ -1749,7 +2064,7 @@ function App() {
             className={activeMenu === 'configuracoes' ? 'tab tab-active w-full' : 'tab w-full'}
             onClick={() => setActiveMenu('configuracoes')}
           >
-            Configuracoes
+            Configurações
           </button>
         </div>
       </nav>
@@ -1758,3 +2073,4 @@ function App() {
 }
 
 export default App
+

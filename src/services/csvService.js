@@ -34,7 +34,7 @@ export async function fetchAndParseCsv(url) {
   })
 
   if (parsed.errors.length) {
-    throw new Error('Nao foi possivel interpretar o CSV.')
+    throw new Error('Não foi possível interpretar o CSV.')
   }
 
   return parsed.data

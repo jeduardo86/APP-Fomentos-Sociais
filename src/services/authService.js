@@ -17,25 +17,25 @@ function mapAuthError(error) {
 
   switch (code) {
     case 'auth/invalid-email':
-      return 'Email invalido. Confira o formato (ex: usuario@dominio.com).'
+      return 'Email inválido. Confira o formato (ex: usuario@dominio.com).'
     case 'auth/missing-email':
-      return 'Informe um email valido.'
+      return 'Informe um email válido.'
     case 'auth/missing-password':
       return 'Informe uma senha para continuar.'
     case 'auth/weak-password':
-      return 'A senha e muito fraca. Use pelo menos 6 caracteres.'
+      return 'A senha é muito fraca. Use pelo menos 6 caracteres.'
     case 'auth/email-already-in-use':
-      return 'Este email ja esta em uso.'
+      return 'Este email já está em uso.'
     case 'auth/user-not-found':
     case 'auth/invalid-credential':
     case 'auth/wrong-password':
-      return 'Email ou senha invalidos.'
+      return 'Email ou senha inválidos.'
     case 'auth/too-many-requests':
       return 'Muitas tentativas seguidas. Aguarde alguns minutos e tente novamente.'
     case 'auth/operation-not-allowed':
       return 'Login por email/senha desativado no Firebase. Ative em Authentication > Sign-in method.'
     case 'auth/api-key-not-valid':
-      return 'Chave da API do Firebase invalida. Revise VITE_FIREBASE_API_KEY no arquivo .env.'
+      return 'Chave da API do Firebase inválida. Revise VITE_FIREBASE_API_KEY no arquivo .env.'
     default:
       return error?.message || 'Falha ao autenticar no Firebase.'
   }

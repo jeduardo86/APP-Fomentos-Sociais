@@ -20,9 +20,9 @@ function mapFirestoreError(error) {
 
   switch (code) {
     case 'permission-denied':
-      return 'Sem permissao para acessar dados no Firestore. Verifique regras e perfil de acesso.'
+      return 'Sem permissão para acessar dados no Firestore. Verifique regras e perfil de acesso.'
     case 'unauthenticated':
-      return 'Sessao expirada ou usuario nao autenticado.'
+      return 'Sessão expirada ou usuário não autenticado.'
     case 'unavailable':
       return 'Servico temporariamente indisponivel. Tente novamente em instantes.'
     default:
@@ -109,7 +109,7 @@ export async function createDestinacao(payload) {
   const valorDestinado = normalizeMoney(payload?.valorDestinado)
 
   if (!processoId) {
-    throw new Error('Processo invalido para destinacao.')
+    throw new Error('Processo inválido para destinação.')
   }
 
   if (valorDestinado <= 0) {
@@ -127,7 +127,7 @@ export async function createDestinacao(payload) {
     )
 
     if (limiteProcesso <= 0) {
-      throw new Error('Nao foi possivel determinar o limite de fomento para este processo.')
+      throw new Error('Não foi possível determinar o limite de fomento para este processo.')
     }
 
     const existentesQuery = query(collections.destinacoes, where('processoId', '==', processoId))
@@ -138,7 +138,7 @@ export async function createDestinacao(payload) {
     )
 
     if (totalJaDestinado + valorDestinado > limiteProcesso) {
-      throw new Error('Saldo insuficiente para este processo no momento da gravacao.')
+      throw new Error('Saldo insuficiente para este processo no momento da gravação.')
     }
 
     const newRef = doc(collections.destinacoes)
@@ -158,7 +158,7 @@ export async function registerDestinacaoPayment(destinacaoId, pgtoData, formaPgt
   const pagamento = normalizeMoney(valorPago)
 
   if (!destinacaoId) {
-    throw new Error('Destinacao invalida para pagamento.')
+    throw new Error('Destinação inválida para pagamento.')
   }
 
   if (!pgtoData || !formaPgto) {
@@ -176,7 +176,7 @@ export async function registerDestinacaoPayment(destinacaoId, pgtoData, formaPgt
     const snapshot = await transaction.get(ref)
 
     if (!snapshot.exists()) {
-      throw new Error('Destinacao nao encontrada.')
+      throw new Error('Destinação não encontrada.')
     }
 
     const data = snapshot.data()
@@ -184,13 +184,13 @@ export async function registerDestinacaoPayment(destinacaoId, pgtoData, formaPgt
     const valorPagoAcumuladoAtual = normalizeMoney(data?.valorPagoAcumulado)
 
     if (valorDestinado <= 0) {
-      throw new Error('Destinacao com valor invalido para pagamento.')
+      throw new Error('Destinação com valor inválido para pagamento.')
     }
 
     const saldoRestante = normalizeMoney(valorDestinado - valorPagoAcumuladoAtual)
 
     if (pagamento > saldoRestante) {
-      throw new Error('Valor pago excede o saldo restante da destinacao.')
+      throw new Error('Valor pago excede o saldo restante da destinação.')
     }
 
     const novoPagoAcumulado = normalizeMoney(valorPagoAcumuladoAtual + pagamento)
@@ -220,7 +220,7 @@ export async function createEmpresa(payload) {
 }
 
 export async function createEntidade(payload) {
-  await addDoc(collections.entidades, payload)
+  return addDoc(collections.entidades, payload)
 }
 
 export async function getTotalDestinadoByProcesso(processoId) {
@@ -267,7 +267,7 @@ export async function ensureUserProfile(user) {
     }
   }
 
-  throw new Error('Nao foi possivel confirmar o perfil de acesso apos varias tentativas.')
+  throw new Error('Não foi possível confirmar o perfil de acesso após várias tentativas.')
 }
 
 export function subscribeUserProfile(uid, callback, onError) {
