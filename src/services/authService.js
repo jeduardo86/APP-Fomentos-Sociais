@@ -4,7 +4,7 @@ import {
   getAuth,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signInWithPopup,
+  signInWithRedirect,
   signOut,
 } from 'firebase/auth'
 import { getApps, initializeApp } from 'firebase/app'
@@ -73,7 +73,8 @@ export async function registerWithEmail(email, password) {
 }
 
 export async function loginWithGoogle() {
-  return signInWithPopup(auth, googleProvider)
+  // Redirect flow avoids popup window polling that triggers COOP warnings in some browsers.
+  return signInWithRedirect(auth, googleProvider)
 }
 
 export async function logout() {
