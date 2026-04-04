@@ -73,6 +73,17 @@ function normalizeMoney(value) {
   return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : 0
 }
 
+function shouldRetryProfileLoad(error) {
+  const code = String(error?.code || '').toLowerCase()
+  return code.includes('permission-denied') || code.includes('unauthenticated')
+}
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
+}
+
 export async function syncBaseCsv(records, userId) {
   const batch = writeBatch(db)
 
@@ -219,31 +230,43 @@ export async function getTotalDestinadoByProcesso(processoId) {
 }
 
 export async function ensureUserProfile(user) {
-  try {
-    const ref = doc(db, 'users', user.uid)
-    const snapshot = await getDoc(ref)
+  const ref = doc(db, 'users', user.uid)
+  const maxAttempts = 3
 
-    if (!snapshot.exists()) {
-      const now = new Date().toISOString()
-      const profile = {
-        uid: user.uid,
-        email: String(user?.email || '').trim().toLowerCase(),
-        role: 'OPERADOR',
-        blocked: false,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: user.uid,
-        updatedBy: user.uid,
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const snapshot = await getDoc(ref)
+
+      if (!snapshot.exists()) {
+        const now = new Date().toISOString()
+        const profile = {
+          uid: user.uid,
+          email: String(user?.email || '').trim().toLowerCase(),
+          role: 'OPERADOR',
+          blocked: false,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: user.uid,
+          updatedBy: user.uid,
+        }
+
+        await setDoc(ref, profile)
+        return profile
       }
 
-      await setDoc(ref, profile)
-      return profile
-    }
+      return snapshot.data()
+    } catch (error) {
+      const isLastAttempt = attempt === maxAttempts
+      if (!isLastAttempt && shouldRetryProfileLoad(error)) {
+        await wait(300 * attempt)
+        continue
+      }
 
-    return snapshot.data()
-  } catch (error) {
-    throw toProfileError(error)
+      throw toProfileError(error)
+    }
   }
+
+  throw new Error('Nao foi possivel confirmar o perfil de acesso apos varias tentativas.')
 }
 
 export function subscribeUserProfile(uid, callback, onError) {
