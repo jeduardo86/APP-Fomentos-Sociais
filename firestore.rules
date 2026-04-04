@@ -102,15 +102,15 @@ service cloud.firestore {
 
     match /entidades/{document=**} {
       allow read: if isAccessEnabled();
-      allow create: if isAdmin() && validCreateOwnership();
-      allow update: if isAdmin() && validUpdateOwnership();
+      allow create: if isAccessEnabled() && validCreateOwnership();
+      allow update: if isAccessEnabled() && validUpdateOwnership();
       allow delete: if false;
     }
 
     match /empresas/{document=**} {
       allow read: if isAccessEnabled();
-      allow create: if isAdmin() && validCreateOwnership();
-      allow update: if isAdmin() && validUpdateOwnership();
+      allow create: if isAccessEnabled() && validCreateOwnership();
+      allow update: if isAccessEnabled() && validUpdateOwnership();
       allow delete: if false;
     }
 

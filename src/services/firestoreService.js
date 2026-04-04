@@ -15,6 +15,28 @@ import {
 } from 'firebase/firestore'
 import { db } from '../lib/firebase'
 
+function mapFirestoreError(error) {
+  const code = error?.code || ''
+
+  switch (code) {
+    case 'permission-denied':
+      return 'Sem permissao para acessar o perfil de usuario. Verifique as regras do Firestore.'
+    case 'unauthenticated':
+      return 'Sessao expirada ou usuario nao autenticado.'
+    case 'unavailable':
+      return 'Servico temporariamente indisponivel. Tente novamente em instantes.'
+    default:
+      return error?.message || 'Falha ao carregar perfil de acesso.'
+  }
+}
+
+function toProfileError(error) {
+  const code = error?.code || ''
+  const reason = mapFirestoreError(error)
+  const message = code ? `${reason} (codigo: ${code})` : reason
+  return new Error(message)
+}
+
 export const collections = {
   empresas: collection(db, 'empresas'),
   entidades: collection(db, 'entidades'),
@@ -186,26 +208,30 @@ export async function getTotalDestinadoByProcesso(processoId) {
 }
 
 export async function ensureUserProfile(user) {
-  const ref = doc(db, 'users', user.uid)
-  const snapshot = await getDoc(ref)
+  try {
+    const ref = doc(db, 'users', user.uid)
+    const snapshot = await getDoc(ref)
 
-  if (snapshot.exists()) {
-    return snapshot.data()
+    if (snapshot.exists()) {
+      return snapshot.data()
+    }
+
+    const profile = {
+      uid: user.uid,
+      email: user.email || '',
+      role: 'OPERADOR',
+      blocked: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdBy: user.uid,
+      updatedBy: user.uid,
+    }
+
+    await setDoc(ref, profile)
+    return profile
+  } catch (error) {
+    throw toProfileError(error)
   }
-
-  const profile = {
-    uid: user.uid,
-    email: user.email || '',
-    role: 'OPERADOR',
-    blocked: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    createdBy: user.uid,
-    updatedBy: user.uid,
-  }
-
-  await setDoc(ref, profile)
-  return profile
 }
 
 export function subscribeUserProfile(uid, callback) {

@@ -129,6 +129,10 @@ function App() {
   })
 
   const isAdmin = userProfile?.role === 'admin' && userProfile?.blocked !== true
+  const canAccessCadastroBase = Boolean(user && userProfile && userProfile?.blocked !== true)
+  const visibleCadastroTabs = isAdmin
+    ? cadastroTabs
+    : cadastroTabs.filter((tab) => tab.id === 'empresas' || tab.id === 'entidades')
 
   useEffect(() => {
     const unsub = subscribeAuthState((sessionUser) => {
@@ -161,8 +165,8 @@ function App() {
           setCsvUrl(settings?.csvLink || '')
         })
       })
-      .catch(() => {
-        toast.error('Nao foi possivel carregar perfil de acesso.')
+      .catch((error) => {
+        toast.error(error?.message || 'Nao foi possivel carregar perfil de acesso.')
       })
 
     return () => {
@@ -564,11 +568,6 @@ function App() {
       return
     }
 
-    if (!isAdmin) {
-      toast.error('Apenas administradores podem cadastrar empresas.')
-      return
-    }
-
     const cnpjLimpo = sanitizeCNPJ(empresaForm.cnpj)
 
     if (!empresaForm.razaoSocial.trim() || cnpjLimpo.length !== 14) {
@@ -597,11 +596,6 @@ function App() {
 
     if (!user) {
       toast.error('Autenticacao obrigatoria para cadastrar entidade.')
-      return
-    }
-
-    if (!isAdmin) {
-      toast.error('Apenas administradores podem cadastrar entidades.')
       return
     }
 
@@ -729,23 +723,35 @@ function App() {
       return
     }
 
-    if (!newUserForm.email.trim() || !newUserForm.password.trim()) {
+    const normalizedEmail = newUserForm.email.trim().toLowerCase()
+    const normalizedPassword = newUserForm.password.trim()
+
+    if (!normalizedEmail || !normalizedPassword) {
       toast.error('Informe email e senha para o novo usuario.')
       return
     }
 
-    if (newUserForm.password.length < 6) {
+    if (normalizedPassword.length < 6) {
       toast.error('A senha deve conter pelo menos 6 caracteres.')
+      return
+    }
+
+    const emailAlreadyRegistered = usersList.some(
+      (entry) => String(entry?.email || '').trim().toLowerCase() === normalizedEmail,
+    )
+
+    if (emailAlreadyRegistered) {
+      toast.error('Este email ja esta cadastrado.')
       return
     }
 
     setIsCreatingUser(true)
 
     try {
-      const createdUser = await createUserByAdmin(newUserForm.email.trim(), newUserForm.password)
+      const createdUser = await createUserByAdmin(normalizedEmail, normalizedPassword)
       await createUserProfileByAdmin(
         createdUser.uid,
-        newUserForm.email.trim(),
+        normalizedEmail,
         newUserForm.role,
         user.uid,
       )
@@ -1361,7 +1367,7 @@ function App() {
             <section className="panel panel-soft sm:p-6">
               <nav className="rounded-2xl border border-slate-200/70 bg-white/70 p-2" aria-label="Submenu de cadastros">
                 <div className="flex flex-wrap gap-2">
-                  {cadastroTabs.map((tab) => (
+                  {visibleCadastroTabs.map((tab) => (
                     <button
                       key={tab.id}
                       type="button"
@@ -1374,13 +1380,13 @@ function App() {
                 </div>
               </nav>
 
-              {!isAdmin && (
+              {!isAdmin && activeCadastroTab === 'usuarios' && (
                 <section className="mt-5 animate-in rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
                   Seu perfil atual nao possui permissao para acessar os cadastros.
                 </section>
               )}
 
-              {isAdmin && activeCadastroTab === 'empresas' && (
+              {canAccessCadastroBase && activeCadastroTab === 'empresas' && (
                 <section className="mt-5 animate-in">
                   <form
                     className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
@@ -1425,7 +1431,7 @@ function App() {
                 </section>
               )}
 
-              {isAdmin && activeCadastroTab === 'entidades' && (
+              {canAccessCadastroBase && activeCadastroTab === 'entidades' && (
                 <section className="mt-5 animate-in">
                   <form
                     className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
