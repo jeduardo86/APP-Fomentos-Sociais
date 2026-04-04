@@ -46,11 +46,22 @@ export const collections = {
   appSettings: collection(db, 'app_settings'),
 }
 
-export function subscribeCollection(collectionRef, callback, sortField = 'nome') {
+export function subscribeCollection(collectionRef, callback, sortField = 'nome', onError) {
   const q = query(collectionRef, orderBy(sortField))
-  return onSnapshot(q, (snapshot) => {
-    callback(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })))
-  })
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      callback(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })))
+    },
+    (error) => {
+      if (onError) {
+        onError(toProfileError(error))
+        return
+      }
+
+      console.error('Snapshot error on collection subscription:', error)
+    },
+  )
 }
 
 function toSafeDocId(value) {
@@ -222,18 +233,40 @@ export async function ensureUserProfile(user) {
   }
 }
 
-export function subscribeUserProfile(uid, callback) {
+export function subscribeUserProfile(uid, callback, onError) {
   const ref = doc(db, 'users', uid)
-  return onSnapshot(ref, (snapshot) => {
-    callback(snapshot.exists() ? snapshot.data() : null)
-  })
+  return onSnapshot(
+    ref,
+    (snapshot) => {
+      callback(snapshot.exists() ? snapshot.data() : null)
+    },
+    (error) => {
+      if (onError) {
+        onError(toProfileError(error))
+        return
+      }
+
+      console.error('Snapshot error on user profile subscription:', error)
+    },
+  )
 }
 
-export function subscribeUsers(callback) {
+export function subscribeUsers(callback, onError) {
   const q = query(collections.users, orderBy('email'))
-  return onSnapshot(q, (snapshot) => {
-    callback(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })))
-  })
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      callback(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })))
+    },
+    (error) => {
+      if (onError) {
+        onError(toProfileError(error))
+        return
+      }
+
+      console.error('Snapshot error on users subscription:', error)
+    },
+  )
 }
 
 export async function updateUserRole(userId, role, adminUid) {
@@ -268,11 +301,22 @@ export async function createUserProfileByAdmin(userId, email, role, adminUid) {
   })
 }
 
-export function subscribeAppSettings(callback) {
+export function subscribeAppSettings(callback, onError) {
   const ref = doc(db, 'app_settings', 'global')
-  return onSnapshot(ref, (snapshot) => {
-    callback(snapshot.exists() ? snapshot.data() : null)
-  })
+  return onSnapshot(
+    ref,
+    (snapshot) => {
+      callback(snapshot.exists() ? snapshot.data() : null)
+    },
+    (error) => {
+      if (onError) {
+        onError(toProfileError(error))
+        return
+      }
+
+      console.error('Snapshot error on app settings subscription:', error)
+    },
+  )
 }
 
 export async function saveCsvLinkConfig(csvLink, userId) {

@@ -132,6 +132,21 @@ function App() {
     ? cadastroTabs
     : cadastroTabs.filter((tab) => tab.id === 'empresas' || tab.id === 'entidades')
 
+  function handleRealtimeAccessError(error) {
+    const message = error?.message || 'Nao foi possivel acompanhar atualizacoes em tempo real.'
+    toast.error(message, { id: 'firestore-realtime-error' })
+
+    const rawMessage = String(error?.message || '')
+    const lostAccess =
+      rawMessage.includes('permission-denied') ||
+      rawMessage.includes('unauthenticated') ||
+      rawMessage.toLowerCase().includes('sem permissao')
+
+    if (lostAccess) {
+      logout().catch(() => {})
+    }
+  }
+
   useEffect(() => {
     const unsub = subscribeAuthState((sessionUser) => {
       setUser(sessionUser)
@@ -158,10 +173,10 @@ function App() {
 
     ensureUserProfile(user)
       .then(() => {
-        stopProfile = subscribeUserProfile(user.uid, setUserProfile)
+        stopProfile = subscribeUserProfile(user.uid, setUserProfile, handleRealtimeAccessError)
         stopAppSettings = subscribeAppSettings((settings) => {
           setCsvUrl(settings?.csvLink || '')
-        })
+        }, handleRealtimeAccessError)
       })
       .catch((error) => {
         toast.error(error?.message || 'Nao foi possivel carregar perfil de acesso.')
@@ -184,10 +199,15 @@ function App() {
     }
 
     const unsubs = [
-      subscribeCollection(collections.baseCsv, setBaseCsv, 'processoId'),
-      subscribeCollection(collections.destinacoes, setDestinacoes, 'solicitacaoData'),
-      subscribeCollection(collections.entidades, setEntidades, 'nome'),
-      subscribeCollection(collections.empresas, setEmpresas, 'razaoSocial'),
+      subscribeCollection(collections.baseCsv, setBaseCsv, 'processoId', handleRealtimeAccessError),
+      subscribeCollection(
+        collections.destinacoes,
+        setDestinacoes,
+        'solicitacaoData',
+        handleRealtimeAccessError,
+      ),
+      subscribeCollection(collections.entidades, setEntidades, 'nome', handleRealtimeAccessError),
+      subscribeCollection(collections.empresas, setEmpresas, 'razaoSocial', handleRealtimeAccessError),
     ]
 
     return () => {
@@ -218,7 +238,7 @@ function App() {
       return undefined
     }
 
-    const stopUsers = subscribeUsers(setUsersList)
+    const stopUsers = subscribeUsers(setUsersList, handleRealtimeAccessError)
     return () => stopUsers()
   }, [user, isAdmin, userProfile])
 
