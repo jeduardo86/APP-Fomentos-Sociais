@@ -121,24 +121,13 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
-      allow create: if isAuthenticated()
+      allow create: if isAdmin()
         && request.resource.data.uid == userId
+        && request.resource.data.email is string
         && validBlockedValue(request.resource.data.blocked)
-        && (
-          (
-            request.auth.uid == userId
-            && request.resource.data.role == 'OPERADOR'
-            && request.resource.data.blocked == false
-            && validCreateOwnership()
-          )
-          ||
-          (
-            isAdmin()
-            && validRole(request.resource.data.role)
-            && request.resource.data.createdBy == request.auth.uid
-            && request.resource.data.updatedBy == request.auth.uid
-          )
-        );
+        && validRole(request.resource.data.role)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.updatedBy == request.auth.uid;
       allow update: if isAuthenticated()
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.email == resource.data.email

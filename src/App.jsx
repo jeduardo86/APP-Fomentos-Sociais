@@ -15,7 +15,6 @@ import {
   loginWithEmail,
   loginWithGoogle,
   logout,
-  registerWithEmail,
   subscribeAuthState,
 } from './services/authService'
 import {
@@ -84,7 +83,6 @@ function App() {
   const [user, setUser] = useState(null)
   const [userProfile, setUserProfile] = useState(null)
   const [authForm, setAuthForm] = useState({ email: '', password: '' })
-  const [authMode, setAuthMode] = useState('login')
 
   const [activeMenu, setActiveMenu] = useState('operacional')
   const [activeTab, setActiveTab] = useState('destinacao')
@@ -167,6 +165,7 @@ function App() {
       })
       .catch((error) => {
         toast.error(error?.message || 'Nao foi possivel carregar perfil de acesso.')
+        logout().catch(() => {})
       })
 
     return () => {
@@ -632,13 +631,8 @@ function App() {
     setAuthBusy(true)
 
     try {
-      if (authMode === 'register') {
-        await registerWithEmail(authForm.email.trim(), authForm.password)
-        toast.success('Conta criada e sessao iniciada.')
-      } else {
-        await loginWithEmail(authForm.email.trim(), authForm.password)
-        toast.success('Sessao iniciada com sucesso.')
-      }
+      await loginWithEmail(authForm.email.trim(), authForm.password)
+      toast.success('Credenciais validadas. Verificando permissao de acesso...')
       setAuthForm({ email: '', password: '' })
     } catch (error) {
       toast.error(error.message || 'Falha na autenticacao.')
@@ -652,7 +646,7 @@ function App() {
 
     try {
       await loginWithGoogle()
-      toast.success('Login com Google concluido.')
+      toast.success('Login realizado. Verificando permissao de acesso...')
     } catch (error) {
       toast.error(error.message || 'Falha no login com Google.')
     } finally {
@@ -826,7 +820,7 @@ function App() {
               </div>
 
               <button className="btn-primary w-full" type="submit" disabled={authBusy}>
-                {authBusy ? 'Processando...' : authMode === 'register' ? 'Criar conta' : 'Entrar'}
+                {authBusy ? 'Processando...' : 'Entrar'}
               </button>
             </form>
 
@@ -839,18 +833,22 @@ function App() {
               Entrar com Google
             </button>
 
-            <button
-              className="mt-3 w-full rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
-              type="button"
-              onClick={() => setAuthMode((current) => (current === 'login' ? 'register' : 'login'))}
-              disabled={authBusy}
-            >
-              {authMode === 'login'
-                ? 'Nao tem conta? Criar novo acesso'
-                : 'Ja possui conta? Entrar com email'}
-            </button>
+            <p className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-center text-sm text-zinc-600">
+              Novos acessos sao criados somente por administradores.
+            </p>
           </section>
         </main>
+      </div>
+    )
+  }
+
+  if (!userProfile) {
+    return (
+      <div className="relative min-h-screen overflow-hidden bg-app-pattern px-4 py-8 text-zinc-900 sm:px-6 lg:px-10">
+        <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
+        <div className="mx-auto max-w-lg rounded-3xl border border-slate-200/80 bg-white/90 p-8 text-center shadow-soft">
+          <p className="text-sm font-medium text-zinc-600">Validando permissao de acesso...</p>
+        </div>
       </div>
     )
   }

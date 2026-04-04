@@ -212,23 +212,11 @@ export async function ensureUserProfile(user) {
     const ref = doc(db, 'users', user.uid)
     const snapshot = await getDoc(ref)
 
-    if (snapshot.exists()) {
-      return snapshot.data()
+    if (!snapshot.exists()) {
+      throw new Error('Seu usuario ainda nao foi aprovado. Solicite liberacao a um administrador.')
     }
 
-    const profile = {
-      uid: user.uid,
-      email: user.email || '',
-      role: 'OPERADOR',
-      blocked: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      createdBy: user.uid,
-      updatedBy: user.uid,
-    }
-
-    await setDoc(ref, profile)
-    return profile
+    return snapshot.data()
   } catch (error) {
     throw toProfileError(error)
   }
