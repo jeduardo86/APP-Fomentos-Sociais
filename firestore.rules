@@ -5,14 +5,6 @@ service cloud.firestore {
       return /databases/$(database)/documents/users/$(request.auth.uid);
     }
 
-    function userDocPathByUid(uid) {
-      return /databases/$(database)/documents/users/$(uid);
-    }
-
-    function emailIndexDocPath(email) {
-      return /databases/$(database)/documents/users_email_index/$(email);
-    }
-
     function isAuthenticated() {
       return request.auth != null;
     }
@@ -41,23 +33,6 @@ service cloud.firestore {
       return blocked is bool;
     }
 
-    function validNormalizedEmail(email) {
-      return email is string
-        && email.size() > 3
-        && email == email.lower()
-        && !email.matches('.*\\s.*')
-        && email.matches('^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$');
-    }
-
-    function validUserEmailIndexCreate(userId) {
-      return !exists(emailIndexDocPath(request.resource.data.email))
-        && existsAfter(emailIndexDocPath(request.resource.data.email))
-        && getAfter(emailIndexDocPath(request.resource.data.email)).data.uid == userId
-        && getAfter(emailIndexDocPath(request.resource.data.email)).data.email == request.resource.data.email
-        && getAfter(emailIndexDocPath(request.resource.data.email)).data.createdBy == request.resource.data.createdBy
-        && getAfter(emailIndexDocPath(request.resource.data.email)).data.updatedBy == request.resource.data.updatedBy;
-    }
-
     function validCreateOwnership() {
       return request.resource.data.createdBy == request.auth.uid
         && request.resource.data.updatedBy == request.auth.uid;
@@ -67,7 +42,7 @@ service cloud.firestore {
       return isAuthenticated()
         && request.auth.uid == userId
         && request.resource.data.uid == userId
-        && validNormalizedEmail(request.resource.data.email)
+        && request.resource.data.email is string
         && request.resource.data.role == 'OPERADOR'
         && request.resource.data.blocked == false
         && request.resource.data.createdBy == request.auth.uid
@@ -160,14 +135,13 @@ service cloud.firestore {
       allow create: if (
           isAdmin()
           && request.resource.data.uid == userId
-          && validNormalizedEmail(request.resource.data.email)
+          && request.resource.data.email is string
           && validBlockedValue(request.resource.data.blocked)
           && validRole(request.resource.data.role)
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.updatedBy == request.auth.uid
-          && validUserEmailIndexCreate(userId)
         )
-        || (validSelfBootstrapUserCreate(userId) && validUserEmailIndexCreate(userId));
+        || validSelfBootstrapUserCreate(userId);
       allow update: if isAuthenticated()
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.email == resource.data.email
@@ -185,20 +159,6 @@ service cloud.firestore {
           || (isAdmin() && validRole(request.resource.data.role))
         );
       allow delete: if false;
-    }
-
-    match /users_email_index/{emailId} {
-      allow read: if isAdmin();
-      allow create: if isAuthenticated()
-        && validNormalizedEmail(emailId)
-        && request.resource.data.email == emailId
-        && request.resource.data.uid is string
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.updatedBy == request.auth.uid
-        && (request.auth.uid == request.resource.data.uid || isAdmin())
-        && existsAfter(userDocPathByUid(request.resource.data.uid))
-        && getAfter(userDocPathByUid(request.resource.data.uid)).data.email == emailId;
-      allow update, delete: if false;
     }
 
     match /app_settings/{document=**} {
