@@ -68,6 +68,14 @@ function toSafeDocId(value) {
   return encodeURIComponent(String(value || '').trim())
 }
 
+function normalizeEmail(email) {
+  return String(email || '').trim().toLowerCase()
+}
+
+function userEmailIndexRef(email) {
+  return doc(db, 'users_email_index', normalizeEmail(email))
+}
+
 function normalizeMoney(value) {
   const parsed = Number(value || 0)
   return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : 0
@@ -239,9 +247,10 @@ export async function ensureUserProfile(user) {
 
       if (!snapshot.exists()) {
         const now = new Date().toISOString()
+        const normalizedEmail = normalizeEmail(user?.email)
         const profile = {
           uid: user.uid,
-          email: String(user?.email || '').trim().toLowerCase(),
+          email: normalizedEmail,
           role: 'OPERADOR',
           blocked: false,
           createdAt: now,
@@ -250,11 +259,41 @@ export async function ensureUserProfile(user) {
           updatedBy: user.uid,
         }
 
-        await setDoc(ref, profile)
+        const batch = writeBatch(db)
+        batch.set(ref, profile)
+        batch.set(userEmailIndexRef(normalizedEmail), {
+          uid: user.uid,
+          email: normalizedEmail,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: user.uid,
+          updatedBy: user.uid,
+        })
+        await batch.commit()
         return profile
       }
 
-      return snapshot.data()
+      const profile = snapshot.data()
+      const normalizedEmail = normalizeEmail(profile?.email)
+
+      if (normalizedEmail) {
+        const indexRef = userEmailIndexRef(normalizedEmail)
+        const indexSnapshot = await getDoc(indexRef)
+
+        if (!indexSnapshot.exists()) {
+          const now = new Date().toISOString()
+          await setDoc(indexRef, {
+            uid: user.uid,
+            email: normalizedEmail,
+            createdAt: now,
+            updatedAt: now,
+            createdBy: user.uid,
+            updatedBy: user.uid,
+          })
+        }
+      }
+
+      return profile
     } catch (error) {
       const isLastAttempt = attempt === maxAttempts
       if (!isLastAttempt && shouldRetryProfileLoad(error)) {
@@ -325,17 +364,32 @@ export async function updateUserAccess(userId, blocked, adminUid) {
 }
 
 export async function createUserProfileByAdmin(userId, email, role, adminUid) {
+  const now = new Date().toISOString()
+  const normalizedEmail = normalizeEmail(email)
   const ref = doc(db, 'users', userId)
-  await setDoc(ref, {
+  const batch = writeBatch(db)
+
+  batch.set(ref, {
     uid: userId,
-    email: email || '',
+    email: normalizedEmail,
     role,
     blocked: false,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
     createdBy: adminUid,
     updatedBy: adminUid,
   })
+
+  batch.set(userEmailIndexRef(normalizedEmail), {
+    uid: userId,
+    email: normalizedEmail,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: adminUid,
+    updatedBy: adminUid,
+  })
+
+  await batch.commit()
 }
 
 export function subscribeAppSettings(callback, onError) {
