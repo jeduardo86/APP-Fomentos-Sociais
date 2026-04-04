@@ -20,7 +20,7 @@ function mapFirestoreError(error) {
 
   switch (code) {
     case 'permission-denied':
-      return 'Sem permissao para acessar o perfil de usuario. Verifique as regras do Firestore.'
+      return 'Sem permissao para acessar dados no Firestore. Verifique regras e perfil de acesso.'
     case 'unauthenticated':
       return 'Sessao expirada ou usuario nao autenticado.'
     case 'unavailable':

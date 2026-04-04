@@ -38,6 +38,17 @@ service cloud.firestore {
         && request.resource.data.updatedBy == request.auth.uid;
     }
 
+    function validSelfBootstrapUserCreate(userId) {
+      return isAuthenticated()
+        && request.auth.uid == userId
+        && request.resource.data.uid == userId
+        && request.resource.data.email is string
+        && request.resource.data.role == 'OPERADOR'
+        && request.resource.data.blocked == false
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
+
     function validUpdateOwnership() {
       return resource.data.createdBy == request.auth.uid
         && request.resource.data.createdBy == resource.data.createdBy
@@ -121,23 +132,16 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
-      allow create: if isAdmin()
-        && request.resource.data.uid == userId
-        && request.resource.data.email is string
-        && validBlockedValue(request.resource.data.blocked)
-        && validRole(request.resource.data.role)
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.updatedBy == request.auth.uid
-        || (
-          isAuthenticated()
-          && request.auth.uid == userId
+      allow create: if (
+          isAdmin()
           && request.resource.data.uid == userId
           && request.resource.data.email is string
-          && request.resource.data.role == 'OPERADOR'
-          && request.resource.data.blocked == false
+          && validBlockedValue(request.resource.data.blocked)
+          && validRole(request.resource.data.role)
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.updatedBy == request.auth.uid
-        );
+        )
+        || validSelfBootstrapUserCreate(userId);
       allow update: if isAuthenticated()
         && request.resource.data.uid == resource.data.uid
         && request.resource.data.email == resource.data.email

@@ -169,14 +169,11 @@ function App() {
     }
 
     let stopProfile = () => {}
-    let stopAppSettings = () => {}
 
     ensureUserProfile(user)
-      .then(() => {
+      .then((profile) => {
+        setUserProfile(profile)
         stopProfile = subscribeUserProfile(user.uid, setUserProfile, handleRealtimeAccessError)
-        stopAppSettings = subscribeAppSettings((settings) => {
-          setCsvUrl(settings?.csvLink || '')
-        }, handleRealtimeAccessError)
       })
       .catch((error) => {
         toast.error(error?.message || 'Nao foi possivel carregar perfil de acesso.')
@@ -185,9 +182,23 @@ function App() {
 
     return () => {
       stopProfile()
-      stopAppSettings()
     }
   }, [user])
+
+  useEffect(() => {
+    if (!user || !userProfile || userProfile.blocked === true) {
+      setCsvUrl('')
+      return undefined
+    }
+
+    const stopAppSettings = subscribeAppSettings((settings) => {
+      setCsvUrl(settings?.csvLink || '')
+    }, handleRealtimeAccessError)
+
+    return () => {
+      stopAppSettings()
+    }
+  }, [user, userProfile])
 
   useEffect(() => {
     if (!user || !userProfile || userProfile.blocked === true) {
