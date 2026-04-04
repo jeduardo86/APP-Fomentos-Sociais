@@ -1,0 +1,84 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    margin: 0;
+    font-family: 'Manrope', sans-serif;
+    color: #0f172a;
+  }
+
+  h1,
+  h2,
+  h3 {
+    font-family: 'Sora', sans-serif;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-3xl border border-white/60 bg-white/85 p-6 shadow-soft backdrop-blur-sm;
+  }
+
+  .panel-hero {
+    @apply bg-gradient-to-br from-white/95 via-cyan-50/80 to-amber-50/70 sm:p-8;
+  }
+
+  .panel-soft {
+    @apply border-slate-200/80 bg-white/90 p-5;
+  }
+
+  .headline {
+    @apply bg-gradient-to-r from-zinc-900 via-slate-800 to-cyan-800 bg-clip-text text-transparent;
+  }
+
+  .field-label {
+    @apply mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-zinc-600;
+  }
+
+  .field-input {
+    @apply w-full rounded-xl border border-slate-200 bg-white/95 px-3 py-2.5 text-sm text-zinc-800 outline-none transition duration-200 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100;
+  }
+
+  .btn-primary {
+    @apply rounded-xl bg-gradient-to-r from-zinc-900 to-zinc-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition duration-200 hover:translate-y-[-1px] hover:from-zinc-800 hover:to-zinc-600 disabled:cursor-not-allowed disabled:from-zinc-400 disabled:to-zinc-400;
+  }
+
+  .tab {
+    @apply rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-zinc-600 transition duration-200 hover:border-slate-300 hover:text-zinc-900;
+  }
+
+  .tab-active {
+    @apply border-cyan-500 bg-gradient-to-r from-cyan-100 to-teal-100 text-cyan-900 shadow-sm;
+  }
+
+  .card-metric {
+    @apply rounded-2xl border border-slate-200/90 bg-white/95 p-4 transition duration-200 hover:-translate-y-0.5 hover:shadow-md;
+  }
+
+  .card-metric p {
+    @apply text-xs uppercase tracking-[0.12em] text-zinc-500;
+  }
+
+  .card-metric strong {
+    @apply mt-2 block break-words text-xl font-semibold leading-tight text-zinc-900 sm:text-[1.35rem];
+  }
+
+  .animate-in {
+    animation: fadeSlideIn 320ms ease-out;
+  }
+}
+
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
