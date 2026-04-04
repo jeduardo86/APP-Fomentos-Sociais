@@ -231,7 +231,7 @@ export async function getTotalDestinadoByProcesso(processoId) {
 
 export async function ensureUserProfile(user) {
   const ref = doc(db, 'users', user.uid)
-  const maxAttempts = 3
+  const maxAttempts = 5
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
@@ -258,6 +258,7 @@ export async function ensureUserProfile(user) {
     } catch (error) {
       const isLastAttempt = attempt === maxAttempts
       if (!isLastAttempt && shouldRetryProfileLoad(error)) {
+        await user.getIdToken(true).catch(() => {})
         await wait(300 * attempt)
         continue
       }
