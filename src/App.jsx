@@ -33,6 +33,7 @@ import {
   subscribeUserProfile,
   subscribeUsers,
   syncBaseCsv,
+  updateEntidade,
   updateUserAccess,
   updateUserName,
   updateUserRole,
@@ -53,14 +54,30 @@ const cadastroTabs = [
 const FONT_SIZE_STORAGE_KEY = 'app-fomentos-font-size'
 
 function getValorFomentoFromProcess(item) {
+  const baseCalculo = getBaseCalculoFomentoFromProcess(item)
+
+  if (baseCalculo > 0) {
+    return baseCalculo * 0.075
+  }
+
+  return Number(item?.valorFomento || 0)
+}
+
+function getBaseCalculoFomentoFromProcess(item) {
   const premio = Number(item?.valorPremio || 0)
   const incentivo = Number(item?.incentivo || 0)
 
   if (premio > 0 || incentivo > 0) {
-    return (premio + incentivo) * 0.075
+    return premio + Math.max(0, incentivo - premio * 0.15)
   }
 
-  return Number(item?.valorFomento || 0)
+  const valorFomento = Number(item?.valorFomento || 0)
+
+  if (valorFomento > 0) {
+    return valorFomento / 0.075
+  }
+
+  return 0
 }
 
 function formatCurrencyCompact(value) {
@@ -88,6 +105,15 @@ function getTodayInputDate() {
   return localDate.toISOString().split('T')[0]
 }
 
+function slugifyFileName(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
+}
+
 function competenciaFromDate(isoDate) {
   if (!isoDate || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) {
     return ''
@@ -95,6 +121,28 @@ function competenciaFromDate(isoDate) {
 
   const [year, month] = isoDate.split('-')
   return `${month}/${year}`
+}
+
+function getEmpresaGroupKey(cnpjValue, empresaNome) {
+  const cnpjDigits = sanitizeCNPJ(cnpjValue)
+
+  if (cnpjDigits) {
+    return `cnpj:${cnpjDigits}`
+  }
+
+  return `sem-cnpj:${String(empresaNome || '').trim().toLowerCase()}`
+}
+
+function createInitialEntidadeForm() {
+  return {
+    nome: '',
+    categoria: 'Assistencia',
+    cnpj: '',
+    contato: '',
+    responsavel: '',
+    chavePix: '',
+    dadosBancarios: '',
+  }
 }
 
 function App() {
@@ -126,6 +174,7 @@ function App() {
   const [selectedProcessIds, setSelectedProcessIds] = useState([])
   const [selectedProcessValues, setSelectedProcessValues] = useState({})
   const [filtroProcessoDestinacao, setFiltroProcessoDestinacao] = useState('')
+  const [filtroEmpresaDestinacao, setFiltroEmpresaDestinacao] = useState('')
   const [filtroEmpresaGerencial, setFiltroEmpresaGerencial] = useState('')
 
   const [destForm, setDestForm] = useState({
@@ -142,7 +191,10 @@ function App() {
   })
 
   const [empresaForm, setEmpresaForm] = useState({ razaoSocial: '', cnpj: '' })
-  const [entidadeForm, setEntidadeForm] = useState({ nome: '', categoria: 'Assistencia' })
+  const [isEmpresaFormVisible, setIsEmpresaFormVisible] = useState(false)
+  const [entidadeForm, setEntidadeForm] = useState(createInitialEntidadeForm())
+  const [isEntidadeFormVisible, setIsEntidadeFormVisible] = useState(false)
+  const [editingEntidadeId, setEditingEntidadeId] = useState('')
   const [isEntidadeModalOpen, setIsEntidadeModalOpen] = useState(false)
   const [isSavingEntidadeModal, setIsSavingEntidadeModal] = useState(false)
   const [usersList, setUsersList] = useState([])
@@ -151,11 +203,13 @@ function App() {
   const [nameBusyUserId, setNameBusyUserId] = useState('')
   const [editingUserId, setEditingUserId] = useState('')
   const [editingUserName, setEditingUserName] = useState('')
+  const [editingUserCargo, setEditingUserCargo] = useState('')
   const [isRevokingBlockedSession, setIsRevokingBlockedSession] = useState(false)
   const [isCreatingUser, setIsCreatingUser] = useState(false)
   const [isCreateUserFormVisible, setIsCreateUserFormVisible] = useState(false)
   const [newUserForm, setNewUserForm] = useState({
     nome: '',
+    cargo: '',
     email: '',
     password: '',
     role: 'OPERADOR',
@@ -297,6 +351,7 @@ function App() {
       setUsersList([])
       setEditingUserId('')
       setEditingUserName('')
+      setEditingUserCargo('')
       setIsCreateUserFormVisible(false)
       return undefined
     }
@@ -317,11 +372,73 @@ function App() {
     }, {})
   }, [destinacoes])
 
-  const empresasComProcessos = useMemo(() => {
-    return Array.from(
-      new Set(baseCsv.map((item) => String(item.empresa || '').trim()).filter(Boolean)),
-    ).sort((a, b) => a.localeCompare(b))
+  const empresasDestinacaoOptions = useMemo(() => {
+    const mapa = new Map()
+
+    baseCsv.forEach((item) => {
+      const empresaNome = String(item.empresa || '').trim() || 'Empresa não informada'
+      const empresaKey = getEmpresaGroupKey(item.cnpj, empresaNome)
+      const cnpjDigits = sanitizeCNPJ(item.cnpj)
+
+      if (!mapa.has(empresaKey)) {
+        mapa.set(empresaKey, {
+          empresaKey,
+          cnpjDigits,
+          nomes: new Map(),
+          fallbackNome: empresaNome,
+        })
+      }
+
+      const entry = mapa.get(empresaKey)
+      entry.nomes.set(empresaNome, (entry.nomes.get(empresaNome) || 0) + 1)
+
+      if (!entry.cnpjDigits && cnpjDigits) {
+        entry.cnpjDigits = cnpjDigits
+      }
+    })
+
+    return Array.from(mapa.values())
+      .map((entry) => {
+        const empresa =
+          Array.from(entry.nomes.entries())
+            .sort((a, b) => {
+              if (b[1] !== a[1]) {
+                return b[1] - a[1]
+              }
+
+              return a[0].localeCompare(b[0])
+            })
+            .at(0)?.[0] || entry.fallbackNome
+
+        const cnpj = entry.cnpjDigits ? maskCNPJ(entry.cnpjDigits) : ''
+
+        return {
+          key: entry.empresaKey,
+          empresa,
+          cnpj,
+          label: cnpj ? `${empresa} | ${cnpj}` : `${empresa} | CNPJ não informado`,
+          searchIndex: [empresa, cnpj, ...Array.from(entry.nomes.keys())]
+            .join(' ')
+            .toLowerCase(),
+        }
+      })
+      .sort((a, b) => a.label.localeCompare(b.label))
   }, [baseCsv])
+
+  const empresasDestinacaoFiltradas = useMemo(() => {
+    const filtro = String(filtroEmpresaDestinacao || '').toLowerCase().trim()
+
+    if (!filtro) {
+      return empresasDestinacaoOptions
+    }
+
+    return empresasDestinacaoOptions.filter((item) => item.searchIndex.includes(filtro))
+  }, [empresasDestinacaoOptions, filtroEmpresaDestinacao])
+
+  const empresaSelecionadaInfo = useMemo(
+    () => empresasDestinacaoOptions.find((item) => item.key === empresaSelecionada) || null,
+    [empresasDestinacaoOptions, empresaSelecionada],
+  )
 
   const processosParaRelatorio = useMemo(
     () =>
@@ -367,6 +484,32 @@ function App() {
     [destinacoesRelatorio],
   )
 
+  const totalPagoRelatorio = useMemo(
+    () => destinacoesRelatorio.reduce((acc, item) => acc + Number(item.valorPagoAcumulado || 0), 0),
+    [destinacoesRelatorio],
+  )
+
+  const saldoPagamentoRelatorio = useMemo(
+    () => Math.max(0, totalDestinadoRelatorio - totalPagoRelatorio),
+    [totalDestinadoRelatorio, totalPagoRelatorio],
+  )
+
+  const statusPagamentoRelatorio = useMemo(() => {
+    if (!destinacoesRelatorio.length) {
+      return 'sem-destinacao'
+    }
+
+    if (totalPagoRelatorio <= 0) {
+      return 'nao-pago'
+    }
+
+    if (saldoPagamentoRelatorio <= 0.009) {
+      return 'pago'
+    }
+
+    return 'parcial'
+  }, [destinacoesRelatorio, totalPagoRelatorio, saldoPagamentoRelatorio])
+
   const entidadesRelatorio = useMemo(
     () =>
       Array.from(
@@ -374,6 +517,27 @@ function App() {
       ).sort((a, b) => a.localeCompare(b)),
     [destinacoesRelatorio],
   )
+
+  const areasDestinacaoRelatorio = useMemo(() => {
+    const categoriaLabelByValue = new Map(categoriaOptions.map((item) => [item.value, item.label]))
+
+    return Array.from(
+      new Set(
+        destinacoesRelatorio
+          .map((item) => {
+            const entidade = entidades.find((entry) => entry.id === item.entidadeId)
+            const categoriaValue = String(entidade?.categoria || '').trim()
+
+            if (!categoriaValue) {
+              return ''
+            }
+
+            return categoriaLabelByValue.get(categoriaValue) || categoriaValue
+          })
+          .filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b))
+  }, [destinacoesRelatorio, entidades])
 
   const usuarioAssinaturaRelatorio =
     userProfile?.nome || user?.displayName || user?.email || userProfile?.email || 'Usuário responsável'
@@ -396,7 +560,10 @@ function App() {
     }
 
     return baseCsv
-      .filter((item) => String(item.empresa || '').trim() === empresaSelecionada)
+      .filter((item) => {
+        const empresaNome = String(item.empresa || '').trim() || 'Empresa não informada'
+        return getEmpresaGroupKey(item.cnpj, empresaNome) === empresaSelecionada
+      })
       .map((item) => {
         const valorFomento = Number(getValorFomentoFromProcess(item) || 0)
         const jaDestinado = Number(totalDestinadoPorProcesso[item.processoId] || 0)
@@ -537,14 +704,15 @@ function App() {
 
   const resumoEmpresas = useMemo(() => {
     const mapa = new Map()
+    const processoToEmpresaKey = new Map()
 
-    baseCsv.forEach((processo) => {
-      const empresa = String(processo.empresa || '').trim() || 'Empresa não informada'
-      const processoId = String(processo.processoId || '').trim()
-
-      if (!mapa.has(empresa)) {
-        mapa.set(empresa, {
-          empresa,
+    function ensureEmpresaItem(empresaKey, empresaNome, cnpjMasked) {
+      if (!mapa.has(empresaKey)) {
+        mapa.set(empresaKey, {
+          empresaKey,
+          empresa: empresaNome || 'Empresa não informada',
+          cnpj: cnpjMasked || '',
+          nomes: new Map(),
           totalFomento: 0,
           totalDestinado: 0,
           totalPago: 0,
@@ -553,7 +721,25 @@ function App() {
         })
       }
 
-      const item = mapa.get(empresa)
+      return mapa.get(empresaKey)
+    }
+
+    baseCsv.forEach((processo) => {
+      const empresa = String(processo.empresa || '').trim() || 'Empresa não informada'
+      const cnpjDigits = sanitizeCNPJ(processo.cnpj)
+      const cnpjMasked = cnpjDigits ? maskCNPJ(cnpjDigits) : ''
+      const empresaKey = getEmpresaGroupKey(cnpjDigits, empresa)
+      const processoId = String(processo.processoId || '').trim()
+      const item = ensureEmpresaItem(empresaKey, empresa, cnpjMasked)
+
+      if (processoId) {
+        processoToEmpresaKey.set(processoId, empresaKey)
+      }
+
+      if (empresa) {
+        item.nomes.set(empresa, (item.nomes.get(empresa) || 0) + 1)
+      }
+
       const valorFomento = Number(getValorFomentoFromProcess(processo) || 0)
       const totalDestinadoProcesso = destinacoes
         .filter((dest) => String(dest.processoId || '').trim() === processoId)
@@ -569,40 +755,73 @@ function App() {
     })
 
     destinacoes.forEach((destinacao) => {
-      const empresa = String(destinacao.empresa || '').trim() || 'Empresa não informada'
+      const processoId = String(destinacao.processoId || '').trim()
+      let empresaKey = processoId ? processoToEmpresaKey.get(processoId) : ''
 
-      if (!mapa.has(empresa)) {
-        mapa.set(empresa, {
-          empresa,
-          totalFomento: 0,
-          totalDestinado: 0,
-          totalPago: 0,
-          processosTotal: 0,
-          processosComSaldo: 0,
-        })
+      if (!empresaKey) {
+        const empresa = String(destinacao.empresa || '').trim() || 'Empresa não informada'
+        const cnpjDigits = sanitizeCNPJ(destinacao.cnpj)
+        const cnpjMasked = cnpjDigits ? maskCNPJ(cnpjDigits) : ''
+        empresaKey = getEmpresaGroupKey(cnpjDigits, empresa)
+        ensureEmpresaItem(empresaKey, empresa, cnpjMasked)
       }
 
-      const item = mapa.get(empresa)
+      const item = mapa.get(empresaKey)
+      const nomeDestino = String(destinacao.empresa || '').trim()
+
+      if (nomeDestino) {
+        item.nomes.set(nomeDestino, (item.nomes.get(nomeDestino) || 0) + 1)
+      }
+
       item.totalPago += Number(destinacao.valorPagoAcumulado || 0)
     })
 
     return Array.from(mapa.values())
-      .map((item) => ({
-        ...item,
-        saldoADestinar: Math.max(0, item.totalFomento - item.totalDestinado),
-        saldoAPagar: Math.max(0, item.totalDestinado - item.totalPago),
-      }))
-      .sort((a, b) => a.empresa.localeCompare(b.empresa))
+      .map((item) => {
+        const empresaPrincipal =
+          Array.from(item.nomes.entries())
+            .sort((a, b) => {
+              if (b[1] !== a[1]) {
+                return b[1] - a[1]
+              }
+
+              return a[0].localeCompare(b[0])
+            })
+            .at(0)?.[0] || item.empresa
+
+        return {
+          ...item,
+          empresa: empresaPrincipal,
+          saldoADestinar: Math.max(0, item.totalFomento - item.totalDestinado),
+          saldoAPagar: Math.max(0, item.totalDestinado - item.totalPago),
+          searchIndex: [
+            item.cnpj,
+            empresaPrincipal,
+            ...Array.from(item.nomes.keys()),
+          ]
+            .join(' ')
+            .toLowerCase(),
+        }
+      })
+      .sort((a, b) => {
+        const cnpjCompare = String(a.cnpj || '').localeCompare(String(b.cnpj || ''))
+
+        if (cnpjCompare !== 0) {
+          return cnpjCompare
+        }
+
+        return a.empresa.localeCompare(b.empresa)
+      })
   }, [baseCsv, destinacoes])
 
   const resumoEmpresasFiltradas = useMemo(() => {
-    const filtro = String(filtroEmpresaGerencial || '').trim()
+    const filtro = String(filtroEmpresaGerencial || '').toLowerCase().trim()
 
     if (!filtro) {
       return resumoEmpresas
     }
 
-    return resumoEmpresas.filter((item) => item.empresa === filtro)
+    return resumoEmpresas.filter((item) => item.searchIndex.includes(filtro))
   }, [resumoEmpresas, filtroEmpresaGerencial])
 
   const resumoFiltroGerencial = useMemo(
@@ -638,19 +857,20 @@ function App() {
     setIsMobileMenuOpen(false)
   }
 
-  function handleIniciarDestinacaoPorEmpresa(empresa) {
-    const normalizedEmpresa = String(empresa || '').trim()
+  function handleIniciarDestinacaoPorEmpresa(empresaKey) {
+    const normalizedEmpresaKey = String(empresaKey || '').trim()
 
-    if (!normalizedEmpresa || !empresasComProcessos.includes(normalizedEmpresa)) {
+    if (!normalizedEmpresaKey || !empresasDestinacaoOptions.some((item) => item.key === normalizedEmpresaKey)) {
       toast.error('Não foi possível abrir a destinação para esta empresa.')
       return
     }
 
     setActiveMenu('operacional')
     setActiveTab('destinacao')
-    setEmpresaSelecionada(normalizedEmpresa)
+    setEmpresaSelecionada(normalizedEmpresaKey)
     setSelectedProcessIds([])
     setSelectedProcessValues({})
+    setFiltroEmpresaDestinacao('')
     setFiltroProcessoDestinacao('')
   }
 
@@ -863,6 +1083,133 @@ function App() {
         })
       }
 
+      let documentoGerado = false
+
+      try {
+        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+        const pageWidth = pdf.internal.pageSize.getWidth()
+        const pageHeight = pdf.internal.pageSize.getHeight()
+        const marginX = 14
+        const contentWidth = pageWidth - marginX * 2
+        const lineHeight = 5.5
+        const sectionGap = 3.5
+        let cursorY = 16
+
+        function ensurePage(requiredHeight = lineHeight) {
+          if (cursorY + requiredHeight > pageHeight - 16) {
+            pdf.addPage()
+            cursorY = 16
+          }
+        }
+
+        function writeLines(text, options = {}) {
+          const size = options.size || 11
+          const fontStyle = options.fontStyle || 'normal'
+          const gapAfter = options.gapAfter ?? 2
+          const lines = Array.isArray(text) ? text : [text]
+
+          pdf.setFont('helvetica', fontStyle)
+          pdf.setFontSize(size)
+
+          lines.forEach((line) => {
+            const chunks = pdf.splitTextToSize(String(line || ''), contentWidth)
+            const blockHeight = Math.max(lineHeight, chunks.length * lineHeight)
+            ensurePage(blockHeight)
+            pdf.text(chunks, marginX, cursorY)
+            cursorY += blockHeight
+          })
+
+          cursorY += gapAfter
+        }
+
+        const valorTotalDestinado = processosSelecionadosComValor.reduce(
+          (acc, processo) => acc + Number(processo.valorDestinadoSelecionado || 0),
+          0,
+        )
+
+        const nomeEmpresa = String(empresaSelecionadaInfo?.empresa || 'Empresa não informada').trim()
+        const cnpjEmpresa = String(empresaSelecionadaInfo?.cnpj || '').trim() || 'Não informado'
+        const nomeEntidade = String(entidade?.nome || '').trim() || 'Não informado'
+        const cnpjEntidade = String(entidade?.cnpj || '').trim() || 'Não informado'
+        const chavePixEntidade = String(entidade?.chavePix || '').trim() || 'Não informada'
+        const dadosBancariosEntidade =
+          String(entidade?.dadosBancarios || '').trim() || 'Não informados'
+        const contatoEntidade = String(entidade?.contato || '').trim() || 'Não informado'
+        const responsavelEntidade = String(entidade?.responsavel || '').trim() || 'Não informado'
+
+        const competenciaDocumento = String(destForm.competencia || '').trim() || '--/----'
+        const solicitacaoDataDocumento = formatDateBR(destForm.solicitacaoData)
+        const dataEmissaoDocumento = formatDateBR(new Date().toISOString())
+        const usuarioResponsavelDocumento =
+          userProfile?.nome || user?.displayName || user?.email || 'Usuário responsável'
+
+        writeLines('Documento de Encaminhamento de Destinação Social', {
+          size: 14,
+          fontStyle: 'bold',
+          gapAfter: sectionGap,
+        })
+
+        writeLines([
+          'À empresa responsável,',
+          `Encaminhamos as informações da destinação social registrada na competência ${competenciaDocumento}.`,
+          `Data da solicitação: ${solicitacaoDataDocumento}.`,
+        ])
+
+        writeLines('Dados da empresa', { fontStyle: 'bold', gapAfter: 1 })
+        writeLines([`Razão social: ${nomeEmpresa}`, `CNPJ: ${cnpjEmpresa}`], {
+          gapAfter: sectionGap,
+        })
+
+        writeLines('Dados da entidade destinatária', { fontStyle: 'bold', gapAfter: 1 })
+        writeLines(
+          [
+            `Entidade: ${nomeEntidade}`,
+            `CNPJ: ${cnpjEntidade}`,
+            `Responsável: ${responsavelEntidade}`,
+            `Contato: ${contatoEntidade}`,
+            `Chave Pix: ${chavePixEntidade}`,
+            `Dados bancários: ${dadosBancariosEntidade}`,
+          ],
+          { gapAfter: sectionGap },
+        )
+
+        writeLines('Processos e valores destinados', { fontStyle: 'bold', gapAfter: 1 })
+
+        processosSelecionadosComValor.forEach((processo, index) => {
+          writeLines(
+            [
+              `${index + 1}. Processo: ${String(processo.processoId || '').trim() || 'Não informado'}`,
+              `Produto: ${String(processo.produto || '').trim() || 'Não informado'}`,
+              `Termo: ${String(processo.termo || '').trim() || 'Não informado'}`,
+              `Valor destinado: ${formatCurrency(processo.valorDestinadoSelecionado)}`,
+            ],
+            { gapAfter: 1 },
+          )
+        })
+
+        writeLines(`Valor total destinado: ${formatCurrency(valorTotalDestinado)}`, {
+          fontStyle: 'bold',
+          gapAfter: sectionGap,
+        })
+
+        writeLines(
+          [
+            `Documento emitido em: ${dataEmissaoDocumento}.`,
+            `Responsável pelo registro: ${usuarioResponsavelDocumento}.`,
+          ],
+          { gapAfter: sectionGap },
+        )
+
+        writeLines('Este documento deve ser encaminhado à empresa para ciência e providências cabíveis.')
+
+        const empresaSlug = slugifyFileName(nomeEmpresa) || 'empresa'
+        const competenciaSlug = slugifyFileName(competenciaDocumento.replace('/', '-')) || 'sem-competencia'
+        pdf.save(`encaminhamento-destinacao-${empresaSlug}-${competenciaSlug}.pdf`)
+        documentoGerado = true
+      } catch {
+        toast.error('Destinações salvas, mas não foi possível gerar o documento de encaminhamento.')
+      }
+
       const nextDate = getTodayInputDate()
       setDestForm({
         solicitacaoData: nextDate,
@@ -871,7 +1218,11 @@ function App() {
       })
       setSelectedProcessIds([])
       setSelectedProcessValues({})
-      toast.success(`Destinações registradas: ${processosSelecionadosComValor.length}`)
+      toast.success(
+        documentoGerado
+          ? `Destinações registradas: ${processosSelecionadosComValor.length}. Documento gerado.`
+          : `Destinações registradas: ${processosSelecionadosComValor.length}`,
+      )
     } catch (error) {
       toast.error(error.message || 'Falha ao salvar a destinação.')
     }
@@ -937,6 +1288,7 @@ function App() {
         updatedBy: user.uid,
       })
       setEmpresaForm({ razaoSocial: '', cnpj: '' })
+      setIsEmpresaFormVisible(false)
       toast.success('Empresa cadastrada.')
     } catch {
       toast.error('Não foi possível cadastrar empresa.')
@@ -954,14 +1306,35 @@ function App() {
     }
 
     const normalizedEntidadeNome = entidadeForm.nome.trim().toLowerCase()
+    const cnpjLimpo = sanitizeCNPJ(entidadeForm.cnpj)
+    const chavePix = entidadeForm.chavePix.trim()
+    const dadosBancarios = entidadeForm.dadosBancarios.trim()
 
     if (!normalizedEntidadeNome || !entidadeForm.categoria) {
       toast.error('Informe nome e categoria da entidade.')
       return
     }
 
+    if (cnpjLimpo.length !== 14) {
+      toast.error('Informe um CNPJ valido para a entidade.')
+      return
+    }
+
+    if (!chavePix && !dadosBancarios) {
+      toast.error('Informe a chave Pix ou os dados bancários para transferência.')
+      return
+    }
+
     const entidadeDuplicada = entidades.some(
-      (entry) => String(entry?.nome || '').trim().toLowerCase() === normalizedEntidadeNome,
+      (entry) =>
+        entry.id !== editingEntidadeId && String(entry?.nome || '').trim().toLowerCase() === normalizedEntidadeNome,
+    )
+
+    const entidadeComCnpjDuplicado = entidades.some(
+      (entry) =>
+        entry.id !== editingEntidadeId &&
+        sanitizeCNPJ(entry?.cnpj).length === 14 &&
+        sanitizeCNPJ(entry?.cnpj) === cnpjLimpo,
     )
 
     if (entidadeDuplicada) {
@@ -969,35 +1342,82 @@ function App() {
       return
     }
 
+    if (entidadeComCnpjDuplicado) {
+      toast.error('Já existe uma entidade cadastrada com este CNPJ.')
+      return
+    }
+
     setIsSavingEntidadeModal(true)
 
     try {
-      const createdEntidade = await createEntidade({
+      const basePayload = {
         nome: entidadeForm.nome.trim(),
         categoria: entidadeForm.categoria,
+        cnpj: maskCNPJ(cnpjLimpo),
+        contato: entidadeForm.contato.trim(),
+        responsavel: entidadeForm.responsavel.trim(),
+        chavePix,
+        dadosBancarios,
         descricaoCategoria: categoriaDescriptions[entidadeForm.categoria] || '',
-        createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        createdBy: user.uid,
         updatedBy: user.uid,
-      })
+      }
+
+      let createdEntidade = null
+
+      if (editingEntidadeId) {
+        await updateEntidade(editingEntidadeId, basePayload)
+      } else {
+        createdEntidade = await createEntidade({
+          ...basePayload,
+          createdAt: new Date().toISOString(),
+          createdBy: user.uid,
+        })
+      }
 
       if (selectOnDestinacao && createdEntidade?.id) {
         setDestForm((current) => ({ ...current, entidadeId: createdEntidade.id }))
       }
 
-      setEntidadeForm({ nome: '', categoria: 'Assistencia' })
+      setEntidadeForm(createInitialEntidadeForm())
+      setEditingEntidadeId('')
+
+      if (!closeModalOnSuccess) {
+        setIsEntidadeFormVisible(false)
+      }
 
       if (closeModalOnSuccess) {
         setIsEntidadeModalOpen(false)
       }
 
-      toast.success('Entidade cadastrada.')
+      toast.success(editingEntidadeId ? 'Entidade atualizada.' : 'Entidade cadastrada.')
     } catch {
-      toast.error('Não foi possível cadastrar entidade.')
+      toast.error(editingEntidadeId ? 'Não foi possível atualizar entidade.' : 'Não foi possível cadastrar entidade.')
     } finally {
       setIsSavingEntidadeModal(false)
     }
+  }
+
+  function handleEditEntidade(entry) {
+    setActiveCadastroTab('entidades')
+    setIsEntidadeFormVisible(true)
+    setEditingEntidadeId(entry.id)
+    setEntidadeForm({
+      nome: String(entry?.nome || ''),
+      categoria: String(entry?.categoria || 'Assistencia'),
+      cnpj: maskCNPJ(entry?.cnpj || ''),
+      contato: String(entry?.contato || ''),
+      responsavel: String(entry?.responsavel || ''),
+      chavePix: String(entry?.chavePix || ''),
+      dadosBancarios: String(entry?.dadosBancarios || ''),
+    })
+    setIsEntidadeModalOpen(false)
+  }
+
+  function handleCancelarEdicaoEntidade() {
+    setEditingEntidadeId('')
+    setEntidadeForm(createInitialEntidadeForm())
+    setIsEntidadeFormVisible(false)
   }
 
   async function handleAuthSubmit(event) {
@@ -1096,20 +1516,23 @@ function App() {
   function handleStartEditUserName(entry) {
     setEditingUserId(entry.uid)
     setEditingUserName(String(entry.nome || ''))
+    setEditingUserCargo(String(entry.cargo || ''))
   }
 
   function handleCancelEditUserName() {
     setEditingUserId('')
     setEditingUserName('')
+    setEditingUserCargo('')
   }
 
-  async function handleUpdateUserName(targetUserId, nextName) {
+  async function handleUpdateUserName(targetUserId, nextName, nextCargo) {
     if (!user || !isAdmin) {
       toast.error('Apenas administradores podem atualizar nomes.')
       return
     }
 
     const normalizedName = String(nextName || '').trim()
+    const normalizedCargo = String(nextCargo || '').trim()
 
     if (!normalizedName) {
       toast.error('Informe um nome válido para o usuário.')
@@ -1119,11 +1542,11 @@ function App() {
     setNameBusyUserId(targetUserId)
 
     try {
-      await updateUserName(targetUserId, normalizedName, user.uid)
-      toast.success('Nome do usuário atualizado com sucesso.')
+      await updateUserName(targetUserId, normalizedName, normalizedCargo, user.uid)
+      toast.success('Dados do usuário atualizados com sucesso.')
       handleCancelEditUserName()
     } catch {
-      toast.error('Falha ao atualizar o nome do usuário.')
+      toast.error('Falha ao atualizar os dados do usuário.')
     } finally {
       setNameBusyUserId('')
     }
@@ -1138,6 +1561,7 @@ function App() {
     }
 
     const normalizedNome = newUserForm.nome.trim()
+    const normalizedCargo = newUserForm.cargo.trim()
     const normalizedEmail = newUserForm.email.trim().toLowerCase()
     const normalizedPassword = newUserForm.password.trim()
 
@@ -1168,11 +1592,12 @@ function App() {
         createdUser.uid,
         normalizedNome,
         normalizedEmail,
+        normalizedCargo,
         newUserForm.role,
         user.uid,
       )
 
-      setNewUserForm({ nome: '', email: '', password: '', role: 'OPERADOR' })
+      setNewUserForm({ nome: '', cargo: '', email: '', password: '', role: 'OPERADOR' })
       toast.success('Usuário cadastrado com sucesso.')
     } catch (error) {
       toast.error(error.message || 'Não foi possível cadastrar o usuário.')
@@ -1424,6 +1849,19 @@ function App() {
                   <h2 className="text-lg font-semibold text-zinc-900">Formulário de destinação</h2>
 
                   <div>
+                    <label className="field-label" htmlFor="filtroEmpresaDestinacao">
+                      Buscar empresa (CNPJ ou nome)
+                    </label>
+                    <input
+                      id="filtroEmpresaDestinacao"
+                      className="field-input"
+                      value={filtroEmpresaDestinacao}
+                      onChange={(event) => setFiltroEmpresaDestinacao(event.target.value)}
+                      placeholder="Ex: 12.345.678/0001-90 ou razão social"
+                    />
+                  </div>
+
+                  <div>
                     <label className="field-label" htmlFor="empresaSelecionada">
                       Empresa
                     </label>
@@ -1438,9 +1876,9 @@ function App() {
                       }}
                     >
                       <option value="">Selecione</option>
-                      {empresasComProcessos.map((empresa) => (
-                        <option key={empresa} value={empresa}>
-                          {empresa}
+                      {empresasDestinacaoFiltradas.map((empresa) => (
+                        <option key={empresa.key} value={empresa.key}>
+                          {empresa.label}
                         </option>
                       ))}
                     </select>
@@ -1449,7 +1887,8 @@ function App() {
                   <div className="grid gap-3 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-cyan-50 p-4 text-sm sm:grid-cols-2">
                     <div>
                       <p className="text-zinc-500">Empresa selecionada</p>
-                      <p className="font-medium text-zinc-900">{empresaSelecionada || '--'}</p>
+                      <p className="font-medium text-zinc-900">{empresaSelecionadaInfo?.empresa || '--'}</p>
+                      <p className="text-xs text-zinc-500">CNPJ: {empresaSelecionadaInfo?.cnpj || '--'}</p>
                     </div>
                     <div>
                       <p className="text-zinc-500">Processos disponíveis</p>
@@ -1512,7 +1951,7 @@ function App() {
                     )}
 
                     {processosEmpresaFiltrados.length > 0 && (
-                      <ul className="max-h-56 space-y-2 overflow-auto">
+                      <ul className="max-h-[30rem] space-y-2 overflow-auto">
                         {processosEmpresaFiltrados.map((item) => {
                           const checked = selectedProcessIds.includes(item.processoId)
 
@@ -1545,6 +1984,13 @@ function App() {
                                 <span>
                                   <span className="font-semibold text-zinc-900">{item.processoId}</span>
                                   <span className="ml-2 text-zinc-500">{item.termo || 'Sem termo'}</span>
+                                  <span className="mt-1 block text-zinc-600">
+                                    Valor Premio: {formatCurrency(item.valorPremio || 0)} | Incentivo:{' '}
+                                    {formatCurrency(item.incentivo || 0)}
+                                  </span>
+                                  <span className="mt-1 block text-zinc-600">
+                                    Base de calculo: {formatCurrency(getBaseCalculoFomentoFromProcess(item))}
+                                  </span>
                                   <span className="mt-1 block text-emerald-700">
                                     Saldo disponível: {formatCurrency(item.saldoDisponivel)}
                                   </span>
@@ -1620,7 +2066,8 @@ function App() {
                           type="button"
                           className="text-sm font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline"
                           onClick={() => {
-                            setEntidadeForm({ nome: '', categoria: 'Assistencia' })
+                            setEditingEntidadeId('')
+                            setEntidadeForm(createInitialEntidadeForm())
                             setIsEntidadeModalOpen(true)
                           }}
                         >
@@ -1813,21 +2260,26 @@ function App() {
                     <div className="grid gap-3">
                       <div className="space-y-1 min-w-0">
                         <label className="field-label" htmlFor="filtroEmpresaGerencial">
-                          Filtro rápido por empresa
+                          Filtro rápido por CNPJ ou nome da empresa
                         </label>
-                        <select
-                          id="filtroEmpresaGerencial"
-                          className="field-input w-full max-w-full"
-                          value={filtroEmpresaGerencial}
-                          onChange={(event) => setFiltroEmpresaGerencial(event.target.value)}
-                        >
-                          <option value="">Todas as empresas</option>
-                          {resumoEmpresas.map((item) => (
-                            <option key={item.empresa} value={item.empresa}>
-                              {item.empresa}
-                            </option>
-                          ))}
-                        </select>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            id="filtroEmpresaGerencial"
+                            className="field-input w-full max-w-full flex-1"
+                            value={filtroEmpresaGerencial}
+                            onChange={(event) => setFiltroEmpresaGerencial(event.target.value)}
+                            placeholder="Ex: 12.345.678/0001-90 ou razão social"
+                          />
+                          {filtroEmpresaGerencial && (
+                            <button
+                              type="button"
+                              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
+                              onClick={() => setFiltroEmpresaGerencial('')}
+                            >
+                              Limpar
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <p className="text-sm text-zinc-500">
@@ -1836,7 +2288,7 @@ function App() {
 
                       {filtroEmpresaGerencial && (
                         <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-zinc-600 break-words">
-                          Empresa selecionada: <strong className="text-zinc-800">{filtroEmpresaGerencial}</strong>
+                          Filtro aplicado: <strong className="text-zinc-800">{filtroEmpresaGerencial}</strong>
                         </p>
                       )}
                     </div>
@@ -1875,15 +2327,18 @@ function App() {
                     )}
 
                     {resumoEmpresasFiltradas.map((item) => (
-                      <article key={item.empresa} className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
+                      <article key={item.empresaKey} className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
                         <div className="flex items-start justify-between gap-3">
                           <button
                             type="button"
                             className="block w-full text-left text-base font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline whitespace-normal break-words leading-snug"
-                            onClick={() => handleIniciarDestinacaoPorEmpresa(item.empresa)}
+                            onClick={() => handleIniciarDestinacaoPorEmpresa(item.empresaKey)}
                             title="Abrir nova destinação para esta empresa"
                           >
-                            {item.empresa}
+                            <span className="block">{item.empresa}</span>
+                            <span className="mt-1 block text-sm font-medium text-zinc-500">
+                              CNPJ: {item.cnpj || 'não informado'}
+                            </span>
                           </button>
                           <span className="rounded-full bg-slate-100 px-2 py-1 text-sm font-medium text-zinc-600">
                             {item.processosComSaldo}/{item.processosTotal} processos
@@ -1920,7 +2375,7 @@ function App() {
                     <table className="w-full border-collapse text-left text-sm">
                       <thead className="bg-slate-100/90 text-zinc-600">
                         <tr>
-                          <th className="px-4 py-3">Empresa</th>
+                          <th className="px-4 py-3">Empresa / CNPJ</th>
                           <th className="px-4 py-3">Fomento</th>
                           <th className="px-4 py-3">Destinado</th>
                           <th className="px-4 py-3">Pago</th>
@@ -1939,15 +2394,18 @@ function App() {
                         )}
 
                         {resumoEmpresasFiltradas.map((item) => (
-                          <tr key={item.empresa} className="border-t border-slate-100/80 even:bg-slate-50/70">
+                          <tr key={item.empresaKey} className="border-t border-slate-100/80 even:bg-slate-50/70">
                             <td className="px-4 py-3 font-medium text-zinc-900 max-w-[320px]">
                               <button
                                 type="button"
                                 className="w-full text-left font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline whitespace-normal break-words leading-snug"
-                                onClick={() => handleIniciarDestinacaoPorEmpresa(item.empresa)}
+                                onClick={() => handleIniciarDestinacaoPorEmpresa(item.empresaKey)}
                                 title="Abrir nova destinação para esta empresa"
                               >
-                                {item.empresa}
+                                <span className="block">{item.empresa}</span>
+                                <span className="mt-1 block text-sm font-medium text-zinc-500">
+                                  CNPJ: {item.cnpj || 'não informado'}
+                                </span>
                               </button>
                             </td>
                             <td className="px-4 py-3 text-zinc-600">{formatCurrency(item.totalFomento)}</td>
@@ -1994,56 +2452,90 @@ function App() {
 
               {canAccessCadastroBase && activeCadastroTab === 'empresas' && (
                 <section className="mt-5 animate-in">
-                  <form
-                    className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
-                    onSubmit={handleSalvarEmpresa}
-                  >
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <h2 className="text-lg font-semibold text-zinc-900">Cadastro de empresas</h2>
-                    <div>
-                      <label className="field-label" htmlFor="razaoSocial">
-                        Razão social
-                      </label>
-                      <input
-                        id="razaoSocial"
-                        className="field-input"
-                        value={empresaForm.razaoSocial}
-                        onChange={(event) =>
-                          setEmpresaForm((current) => ({ ...current, razaoSocial: event.target.value }))
-                        }
-                      />
-                    </div>
-                    <div>
-                      <label className="field-label" htmlFor="cnpj">
-                        CNPJ
-                      </label>
-                      <input
-                        id="cnpj"
-                        className="field-input"
-                        value={empresaForm.cnpj}
-                        onChange={(event) =>
-                          setEmpresaForm((current) => ({ ...current, cnpj: maskCNPJ(event.target.value) }))
-                        }
-                        placeholder="00.000.000/0000-00"
-                      />
-                    </div>
-                    <button className="btn-primary w-full" type="submit">
-                      Cadastrar empresa
+                    <button
+                      type="button"
+                      className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100"
+                      onClick={() => {
+                        setEmpresaForm({ razaoSocial: '', cnpj: '' })
+                        setIsEmpresaFormVisible((current) => !current)
+                      }}
+                    >
+                      {isEmpresaFormVisible ? 'Ocultar formulário' : 'Adicionar empresa'}
                     </button>
+                  </div>
 
-                    <div className="rounded-xl bg-white p-3 text-sm text-zinc-600">
-                      Empresas cadastradas: {empresas.length}
-                    </div>
-                  </form>
+                  {isEmpresaFormVisible && (
+                    <form
+                      className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
+                      onSubmit={handleSalvarEmpresa}
+                    >
+                      <h3 className="text-base font-semibold text-zinc-900">Nova empresa</h3>
+                      <div>
+                        <label className="field-label" htmlFor="razaoSocial">
+                          Razão social
+                        </label>
+                        <input
+                          id="razaoSocial"
+                          className="field-input"
+                          value={empresaForm.razaoSocial}
+                          onChange={(event) =>
+                            setEmpresaForm((current) => ({ ...current, razaoSocial: event.target.value }))
+                          }
+                        />
+                      </div>
+                      <div>
+                        <label className="field-label" htmlFor="cnpj">
+                          CNPJ
+                        </label>
+                        <input
+                          id="cnpj"
+                          className="field-input"
+                          value={empresaForm.cnpj}
+                          onChange={(event) =>
+                            setEmpresaForm((current) => ({ ...current, cnpj: maskCNPJ(event.target.value) }))
+                          }
+                          placeholder="00.000.000/0000-00"
+                        />
+                      </div>
+                      <button className="btn-primary w-full" type="submit">
+                        Cadastrar empresa
+                      </button>
+                    </form>
+                  )}
+
+                  <div className="mt-4 rounded-xl bg-white p-3 text-sm text-zinc-600">
+                    Empresas cadastradas: {empresas.length}
+                  </div>
                 </section>
               )}
 
               {canAccessCadastroBase && activeCadastroTab === 'entidades' && (
                 <section className="mt-5 animate-in">
-                  <form
-                    className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
-                    onSubmit={handleSalvarEntidade}
-                  >
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                     <h2 className="text-lg font-semibold text-zinc-900">Cadastro de entidades</h2>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100"
+                      onClick={() => {
+                        setEditingEntidadeId('')
+                        setEntidadeForm(createInitialEntidadeForm())
+                        setIsEntidadeFormVisible((current) => !current)
+                      }}
+                    >
+                      {isEntidadeFormVisible ? 'Ocultar formulário' : 'Adicionar entidade'}
+                    </button>
+                  </div>
+
+                  {(isEntidadeFormVisible || editingEntidadeId) && (
+                    <form
+                      className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
+                      onSubmit={handleSalvarEntidade}
+                    >
+                      <h3 className="text-base font-semibold text-zinc-900">
+                        {editingEntidadeId ? 'Editar entidade' : 'Nova entidade'}
+                      </h3>
                     <div>
                       <label className="field-label" htmlFor="entidadeNome">
                         Nome da entidade
@@ -2055,6 +2547,51 @@ function App() {
                         onChange={(event) =>
                           setEntidadeForm((current) => ({ ...current, nome: event.target.value }))
                         }
+                      />
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="entidadeCnpj">
+                        CNPJ
+                      </label>
+                      <input
+                        id="entidadeCnpj"
+                        className="field-input"
+                        value={entidadeForm.cnpj}
+                        onChange={(event) =>
+                          setEntidadeForm((current) => ({ ...current, cnpj: maskCNPJ(event.target.value) }))
+                        }
+                        placeholder="00.000.000/0000-00"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="entidadeResponsavel">
+                        Nome do responsável
+                      </label>
+                      <input
+                        id="entidadeResponsavel"
+                        className="field-input"
+                        value={entidadeForm.responsavel}
+                        onChange={(event) =>
+                          setEntidadeForm((current) => ({ ...current, responsavel: event.target.value }))
+                        }
+                        placeholder="Nome completo"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="entidadeContato">
+                        Contato
+                      </label>
+                      <input
+                        id="entidadeContato"
+                        className="field-input"
+                        value={entidadeForm.contato}
+                        onChange={(event) =>
+                          setEntidadeForm((current) => ({ ...current, contato: event.target.value }))
+                        }
+                        placeholder="Telefone, e-mail ou ambos"
                       />
                     </div>
 
@@ -2078,14 +2615,116 @@ function App() {
                       </select>
                     </div>
 
+                    <div>
+                      <label className="field-label" htmlFor="entidadeChavePix">
+                        Chave Pix
+                      </label>
+                      <input
+                        id="entidadeChavePix"
+                        className="field-input"
+                        value={entidadeForm.chavePix}
+                        onChange={(event) =>
+                          setEntidadeForm((current) => ({ ...current, chavePix: event.target.value }))
+                        }
+                        placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="entidadeDadosBancarios">
+                        Dados bancários para transferência
+                      </label>
+                      <textarea
+                        id="entidadeDadosBancarios"
+                        className="field-input min-h-24"
+                        value={entidadeForm.dadosBancarios}
+                        onChange={(event) =>
+                          setEntidadeForm((current) => ({ ...current, dadosBancarios: event.target.value }))
+                        }
+                        placeholder="Banco, agência, conta e tipo"
+                      />
+                    </div>
+
+                    <p className="text-xs text-zinc-500">Obrigatório informar CNPJ e ao menos Pix ou dados bancários.</p>
+
                     <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900">
                       {categoriaTexto}
                     </div>
 
-                    <button className="btn-primary w-full" type="submit">
-                      Cadastrar entidade
-                    </button>
-                  </form>
+                    <div className="flex flex-wrap gap-2">
+                      <button className="btn-primary flex-1" type="submit">
+                        {editingEntidadeId ? 'Salvar alterações' : 'Cadastrar entidade'}
+                      </button>
+                      {editingEntidadeId && (
+                        <button
+                          type="button"
+                          className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
+                          onClick={handleCancelarEdicaoEntidade}
+                        >
+                          Cancelar edição
+                        </button>
+                      )}
+                    </div>
+                    </form>
+                  )}
+
+                  <section className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <h3 className="text-base font-semibold text-zinc-900">Entidades cadastradas</h3>
+                      <span className="rounded-lg bg-slate-100 px-2 py-1 text-xs font-semibold text-zinc-600">
+                        Total: {entidades.length}
+                      </span>
+                    </div>
+
+                    {entidades.length === 0 ? (
+                      <p className="text-sm text-zinc-600">Nenhuma entidade cadastrada até o momento.</p>
+                    ) : (
+                      <ul className="space-y-3">
+                        {entidades.map((entry) => (
+                          <li key={entry.id} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className="font-semibold text-zinc-900">{entry.nome || 'Sem nome'}</p>
+                                <p className="text-sm text-zinc-600">Categoria: {entry.categoria || '--'}</p>
+                              </div>
+                              <button
+                                type="button"
+                                className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-800 transition hover:bg-cyan-100"
+                                onClick={() => handleEditEntidade(entry)}
+                              >
+                                Editar
+                              </button>
+                            </div>
+
+                            <dl className="mt-3 grid gap-2 text-sm text-zinc-700 sm:grid-cols-2">
+                              <div>
+                                <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">CNPJ</dt>
+                                <dd>{entry.cnpj || '--'}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Responsável</dt>
+                                <dd>{entry.responsavel || '--'}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Contato</dt>
+                                <dd>{entry.contato || '--'}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Chave Pix</dt>
+                                <dd>{entry.chavePix || '--'}</dd>
+                              </div>
+                              <div className="sm:col-span-2">
+                                <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">
+                                  Dados bancários
+                                </dt>
+                                <dd className="whitespace-pre-wrap">{entry.dadosBancarios || '--'}</dd>
+                              </div>
+                            </dl>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
                 </section>
               )}
 
@@ -2100,12 +2739,12 @@ function App() {
                     </div>
                     <button
                       type="button"
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
+                      className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100"
                       onClick={() => {
                         setIsCreateUserFormVisible((current) => !current)
 
                         if (isCreateUserFormVisible) {
-                          setNewUserForm({ nome: '', email: '', password: '', role: 'OPERADOR' })
+                          setNewUserForm({ nome: '', cargo: '', email: '', password: '', role: 'OPERADOR' })
                         }
                       }}
                     >
@@ -2130,6 +2769,21 @@ function App() {
                             setNewUserForm((current) => ({ ...current, nome: event.target.value }))
                           }
                           placeholder="Nome completo"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-1">
+                        <label className="field-label" htmlFor="novoUsuarioCargo">
+                          Cargo/Função
+                        </label>
+                        <input
+                          id="novoUsuarioCargo"
+                          className="field-input"
+                          value={newUserForm.cargo}
+                          onChange={(event) =>
+                            setNewUserForm((current) => ({ ...current, cargo: event.target.value }))
+                          }
+                          placeholder="Ex: Analista Financeiro"
                         />
                       </div>
 
@@ -2190,13 +2844,163 @@ function App() {
                     </form>
                   )}
 
-                  <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white/80">
+                  <div className="space-y-3 md:hidden">
+                    {usersList.length === 0 && (
+                      <article className="rounded-2xl border border-slate-200 bg-white/85 p-4 text-sm text-zinc-500">
+                        Nenhum usuario encontrado.
+                      </article>
+                    )}
+
+                    {usersList.map((entry) => {
+                      const isSelf = entry.uid === user.uid
+                      const nextRole = entry.role === 'admin' ? 'OPERADOR' : 'admin'
+                      const isBlocked = entry.blocked === true
+                      const isRoleBusy = roleBusyUserId === entry.uid
+                      const isAccessBusy = accessBusyUserId === entry.uid
+                      const isNameBusy = nameBusyUserId === entry.uid
+                      const isEditingName = editingUserId === entry.uid
+
+                      return (
+                        <article key={entry.uid} className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
+                          <div className="space-y-3">
+                            <div>
+                              <p className="text-xs uppercase tracking-[0.08em] text-zinc-500">Nome</p>
+                              {isEditingName ? (
+                                <input
+                                  className="field-input mt-1 py-2"
+                                  value={editingUserName}
+                                  onChange={(event) => setEditingUserName(event.target.value)}
+                                  placeholder="Nome completo"
+                                  aria-label={`Nome do usuário ${entry.email || entry.uid}`}
+                                />
+                              ) : (
+                                <p className="mt-1 font-semibold text-zinc-900">{entry.nome || '--'}</p>
+                              )}
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              <div className="rounded-xl bg-slate-50 p-2">
+                                <p className="text-xs uppercase tracking-[0.08em] text-zinc-500">Cargo/Função</p>
+                                {isEditingName ? (
+                                  <input
+                                    className="field-input mt-1 py-2"
+                                    value={editingUserCargo}
+                                    onChange={(event) => setEditingUserCargo(event.target.value)}
+                                    placeholder="Cargo/Função"
+                                    aria-label={`Cargo/Função do usuário ${entry.email || entry.uid}`}
+                                  />
+                                ) : (
+                                  <p className="mt-1 text-sm font-medium text-zinc-800">{entry.cargo || '--'}</p>
+                                )}
+                              </div>
+                              <div className="rounded-xl bg-slate-50 p-2">
+                                <p className="text-xs uppercase tracking-[0.08em] text-zinc-500">Email</p>
+                                <p className="mt-1 break-all text-sm font-medium text-zinc-800">{entry.email || '--'}</p>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-2">
+                              <span
+                                className={
+                                  entry.role === 'admin'
+                                    ? 'rounded-full bg-cyan-100 px-2 py-1 text-sm font-semibold text-cyan-800'
+                                    : 'rounded-full bg-amber-100 px-2 py-1 text-sm font-semibold text-amber-800'
+                                }
+                              >
+                                {(entry.role || 'OPERADOR').toUpperCase()}
+                              </span>
+                              <span
+                                className={
+                                  isBlocked
+                                    ? 'rounded-full bg-rose-100 px-2 py-1 text-sm font-semibold text-rose-800'
+                                    : 'rounded-full bg-emerald-100 px-2 py-1 text-sm font-semibold text-emerald-800'
+                                }
+                              >
+                                {isBlocked ? 'BLOQUEADO' : 'ATIVO'}
+                              </span>
+                            </div>
+
+                            {isEditingName ? (
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={() => handleCancelEditUserName()}
+                                  disabled={isNameBusy}
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  type="button"
+                                  className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={() =>
+                                    handleUpdateUserName(entry.uid, editingUserName, editingUserCargo)
+                                  }
+                                  disabled={isNameBusy}
+                                >
+                                  {isNameBusy ? 'Salvando dados...' : 'Salvar dados'}
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                  onClick={() => handleStartEditUserName(entry)}
+                                  disabled={isRoleBusy || isAccessBusy || isNameBusy}
+                                >
+                                  Editar
+                                </button>
+                                {isSelf ? (
+                                  <button
+                                    type="button"
+                                    className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-zinc-600"
+                                    disabled
+                                  >
+                                    Usuário atual
+                                  </button>
+                                ) : (
+                                  <>
+                                    <button
+                                      type="button"
+                                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                      onClick={() => handleUpdateRole(entry.uid, nextRole)}
+                                      disabled={isRoleBusy || isAccessBusy || isNameBusy}
+                                    >
+                                      {isRoleBusy
+                                        ? 'Atualizando perfil...'
+                                        : `Tornar ${nextRole.toUpperCase()}`}
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                      onClick={() => handleToggleUserAccess(entry.uid, !isBlocked)}
+                                      disabled={isAccessBusy || isRoleBusy || isNameBusy}
+                                    >
+                                      {isAccessBusy
+                                        ? 'Atualizando acesso...'
+                                        : isBlocked
+                                          ? 'Liberar acesso'
+                                          : 'Bloquear acesso'}
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+
+                  <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white/80 md:block">
                     <table className="min-w-full border-collapse text-left text-sm">
                       <thead className="bg-slate-100/90 text-zinc-600">
                         <tr>
                           <th className="px-4 py-3">Nome</th>
+                          <th className="px-4 py-3">Cargo/Função</th>
                           <th className="px-4 py-3">Email</th>
-                          <th className="px-4 py-3">UID</th>
                           <th className="px-4 py-3">Perfil</th>
                           <th className="px-4 py-3">Acesso</th>
                           <th className="px-4 py-3 text-right">Ações</th>
@@ -2235,8 +3039,20 @@ function App() {
                                   entry.nome || '--'
                                 )}
                               </td>
+                              <td className="px-4 py-3 text-zinc-600 min-w-[180px]">
+                                {isEditingName ? (
+                                  <input
+                                    className="field-input py-2"
+                                    value={editingUserCargo}
+                                    onChange={(event) => setEditingUserCargo(event.target.value)}
+                                    placeholder="Cargo/Função"
+                                    aria-label={`Cargo/Função do usuário ${entry.email || entry.uid}`}
+                                  />
+                                ) : (
+                                  entry.cargo || '--'
+                                )}
+                              </td>
                               <td className="px-4 py-3 font-medium text-zinc-900">{entry.email || '--'}</td>
-                              <td className="px-4 py-3 text-sm text-zinc-500">{entry.uid}</td>
                               <td className="px-4 py-3">
                                 <span
                                   className={
@@ -2273,10 +3089,12 @@ function App() {
                                     <button
                                       type="button"
                                       className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
-                                      onClick={() => handleUpdateUserName(entry.uid, editingUserName)}
+                                      onClick={() =>
+                                        handleUpdateUserName(entry.uid, editingUserName, editingUserCargo)
+                                      }
                                       disabled={isNameBusy}
                                     >
-                                      {isNameBusy ? 'Salvando nome...' : 'Salvar nome'}
+                                      {isNameBusy ? 'Salvando dados...' : 'Salvar dados'}
                                     </button>
                                   </div>
                                 ) : (
@@ -2470,10 +3288,21 @@ function App() {
 
                     {reportProcessoId && (
                       <>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-[12.5px] leading-relaxed text-zinc-700">
+                          <p>
+                            De acordo com a Instrução Normativa nº 001/2024, que regulamenta a modalidade passiva,
+                            os recursos correspondentes a <strong>7,5% da totalidade dos prêmios</strong> devem ser
+                            destinados ao fomento de ações e projetos nas áreas de Assistência, Desportos, Educação,
+                            Saúde e Desenvolvimento Social. Essas ações devem ser executadas pela empresa autorizada
+                            em parceria com a LOTEP. O Decreto nº 44.576/2023 também inclui a{' '}
+                            <strong>Segurança Pública</strong> entre as áreas contempladas.
+                          </p>
+                        </div>
+
                         <p>
-                          Aos {dataEmissaoRelatorioExtenso}, em atendimento à consulta registrada no processo
-                          administrativo, certificamos formalmente a situação da destinação social vinculada ao
-                          processo nº <strong>{reportProcessoId}</strong>.
+                          Em atendimento à consulta formalizada nos autos do processo administrativo nº{' '}
+                          <strong>{reportProcessoId}</strong>, certifica-se a situação da destinação social a ele
+                          vinculada.
                         </p>
 
                         {destinacoesRelatorio.length > 0 ? (
@@ -2486,36 +3315,59 @@ function App() {
                             </p>
 
                             <p>
-                              As destinações foram direcionadas às seguintes entidades:{' '}
-                              <strong>{entidadesRelatorio.join('; ') || 'entidade não identificada'}</strong>.
+                              As áreas contempladas pela destinação no processo são:{' '}
+                              <strong>{areasDestinacaoRelatorio.join('; ') || 'Área não identificada'}</strong>.
                             </p>
 
-                            <p>
-                              Dados complementares do processo: empresa{' '}
-                              <strong>{processoSelecionadoRelatorio?.empresa || 'não informada'}</strong>, produto{' '}
-                              <strong>{processoSelecionadoRelatorio?.produto || 'não informado'}</strong>.
-                            </p>
+                            {statusPagamentoRelatorio === 'pago' && (
+                              <p>
+                                Quanto ao pagamento, verifica-se que o valor destinado encontra-se
+                                <strong> integralmente pago</strong>, no total de{' '}
+                                <strong>{formatCurrency(totalPagoRelatorio)}</strong>.
+                              </p>
+                            )}
+
+                            {statusPagamentoRelatorio === 'parcial' && (
+                              <p>
+                                Quanto ao pagamento, verifica-se quitação <strong>parcial</strong>, com total pago de{' '}
+                                <strong>{formatCurrency(totalPagoRelatorio)}</strong> e saldo pendente de{' '}
+                                <strong>{formatCurrency(saldoPagamentoRelatorio)}</strong>.
+                              </p>
+                            )}
+
+                            {statusPagamentoRelatorio === 'nao-pago' && (
+                              <p>
+                                Quanto ao pagamento, <strong>não há registro de quitação</strong> até a presente
+                                data.
+                              </p>
+                            )}
                           </>
                         ) : (
-                          <p>
-                            Após análise dos registros institucionais disponíveis no sistema de controle de
-                            fomentos, <strong>não foram localizadas destinações sociais registradas</strong> para o
-                            processo informado até a presente data.
-                          </p>
+                          <>
+                            <p>
+                              Após análise dos registros institucionais disponíveis no sistema de controle de
+                              fomentos, <strong>não foram localizadas destinações sociais registradas</strong> para o
+                              processo informado até a presente data.
+                            </p>
+                            <p>
+                              O presente relatório é emitido para fins de instrução processual, com vistas à
+                              comprovação formal da inexistência de destinação social registrada no âmbito do processo
+                              em epígrafe.
+                            </p>
+                          </>
                         )}
 
-                        <p>
-                          Este relatório é emitido para fins de juntada aos autos e comprovação formal da situação
-                          de destinação social do processo consultado.
-                        </p>
+                        <p>João Pessoa, {dataEmissaoRelatorioExtenso}.</p>
                       </>
                     )}
                   </section>
 
                   <footer className="mt-16 text-center">
-                    <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">Responsável pela emissão</p>
                     <p className="mt-10 text-sm font-semibold uppercase tracking-[0.06em] text-zinc-900">
                       {usuarioAssinaturaRelatorio}
+                    </p>
+                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.06em] text-zinc-600">
+                      {userProfile?.cargo || 'CARGO/FUNCAO'}
                     </p>
                   </footer>
                 </article>
@@ -2569,6 +3421,51 @@ function App() {
               </div>
 
               <div>
+                <label className="field-label" htmlFor="modalEntidadeCnpj">
+                  CNPJ
+                </label>
+                <input
+                  id="modalEntidadeCnpj"
+                  className="field-input"
+                  value={entidadeForm.cnpj}
+                  onChange={(event) =>
+                    setEntidadeForm((current) => ({ ...current, cnpj: maskCNPJ(event.target.value) }))
+                  }
+                  placeholder="00.000.000/0000-00"
+                />
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="modalResponsavelEntidade">
+                  Nome do responsável
+                </label>
+                <input
+                  id="modalResponsavelEntidade"
+                  className="field-input"
+                  value={entidadeForm.responsavel}
+                  onChange={(event) =>
+                    setEntidadeForm((current) => ({ ...current, responsavel: event.target.value }))
+                  }
+                  placeholder="Nome completo"
+                />
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="modalContatoEntidade">
+                  Contato
+                </label>
+                <input
+                  id="modalContatoEntidade"
+                  className="field-input"
+                  value={entidadeForm.contato}
+                  onChange={(event) =>
+                    setEntidadeForm((current) => ({ ...current, contato: event.target.value }))
+                  }
+                  placeholder="Telefone, e-mail ou ambos"
+                />
+              </div>
+
+              <div>
                 <label className="field-label" htmlFor="modalCategoriaEntidade">
                   Categoria
                 </label>
@@ -2587,6 +3484,38 @@ function App() {
                   ))}
                 </select>
               </div>
+
+              <div>
+                <label className="field-label" htmlFor="modalEntidadePix">
+                  Chave Pix
+                </label>
+                <input
+                  id="modalEntidadePix"
+                  className="field-input"
+                  value={entidadeForm.chavePix}
+                  onChange={(event) =>
+                    setEntidadeForm((current) => ({ ...current, chavePix: event.target.value }))
+                  }
+                  placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória"
+                />
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="modalDadosBancariosEntidade">
+                  Dados bancários para transferência
+                </label>
+                <textarea
+                  id="modalDadosBancariosEntidade"
+                  className="field-input min-h-24"
+                  value={entidadeForm.dadosBancarios}
+                  onChange={(event) =>
+                    setEntidadeForm((current) => ({ ...current, dadosBancarios: event.target.value }))
+                  }
+                  placeholder="Banco, agência, conta e tipo"
+                />
+              </div>
+
+              <p className="text-xs text-zinc-500">Obrigatório informar CNPJ e ao menos Pix ou dados bancários.</p>
 
               <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900">
                 {categoriaTexto}

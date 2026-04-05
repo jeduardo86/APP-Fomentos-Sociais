@@ -223,6 +223,11 @@ export async function createEntidade(payload) {
   return addDoc(collections.entidades, payload)
 }
 
+export async function updateEntidade(entidadeId, payload) {
+  const ref = doc(db, 'entidades', entidadeId)
+  await updateDoc(ref, payload)
+}
+
 export async function getTotalDestinadoByProcesso(processoId) {
   const q = query(collections.destinacoes, where('processoId', '==', processoId))
   const snapshot = await getDocs(q)
@@ -243,6 +248,7 @@ export async function ensureUserProfile(user) {
           uid: user.uid,
           nome: String(user?.displayName || '').trim(),
           email: String(user?.email || '').trim().toLowerCase(),
+          cargo: '',
           role: 'OPERADOR',
           blocked: false,
           createdAt: now,
@@ -325,21 +331,23 @@ export async function updateUserAccess(userId, blocked, adminUid) {
   })
 }
 
-export async function updateUserName(userId, nome, adminUid) {
+export async function updateUserName(userId, nome, cargo, adminUid) {
   const ref = doc(db, 'users', userId)
   await updateDoc(ref, {
     nome: String(nome || '').trim(),
+    cargo: String(cargo || '').trim(),
     updatedAt: new Date().toISOString(),
     updatedBy: adminUid,
   })
 }
 
-export async function createUserProfileByAdmin(userId, nome, email, role, adminUid) {
+export async function createUserProfileByAdmin(userId, nome, email, cargo, role, adminUid) {
   const ref = doc(db, 'users', userId)
   await setDoc(ref, {
     uid: userId,
     nome: String(nome || '').trim(),
     email: email || '',
+    cargo: String(cargo || '').trim(),
     role,
     blocked: false,
     createdAt: new Date().toISOString(),

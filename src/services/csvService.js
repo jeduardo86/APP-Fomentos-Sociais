@@ -1,5 +1,5 @@
 import Papa from 'papaparse'
-import { parseCurrencyText } from '../lib/formatters'
+import { maskCNPJ, parseCurrencyText, sanitizeCNPJ } from '../lib/formatters'
 
 function normalizeHeader(name) {
   return String(name || '')
@@ -50,8 +50,14 @@ export async function fetchAndParseCsv(url) {
       return {
         processoId,
         termo: String(
-          getAny(row, ['TERMOAUTORIZACAO', 'TERMO', 'TERMODEAUTORIZACAO']),
+          getAny(row, ['NTERMO', 'TERMOAUTORIZACAO', 'TERMO', 'TERMODEAUTORIZACAO']),
         ).trim(),
+        cnpj: (() => {
+          const cnpjDigits = sanitizeCNPJ(
+            getAny(row, ['CNPJ', 'CNPJEMPRESA', 'CPF_CNPJ', 'CPFCNPJ', 'DOCUMENTO']),
+          )
+          return cnpjDigits ? maskCNPJ(cnpjDigits) : ''
+        })(),
         empresa: String(
           getAny(row, ['EMPRESA', 'RAZAOSOCIAL', 'EMPRESA_RAZAOSOCIAL']),
         ).trim(),
@@ -70,7 +76,9 @@ export async function fetchAndParseCsv(url) {
             getAny(row, ['INCENTIVO', 'VALORINCENTIVO', 'VALOR_DO_INCENTIVO']),
           )
           if (valorPremio > 0 || incentivo > 0) {
-            return (valorPremio + incentivo) * 0.075
+            const incentivoBase = Math.max(0, incentivo - valorPremio * 0.15)
+            const baseCalculo = valorPremio + incentivoBase
+            return baseCalculo * 0.075
           }
           return parseCurrencyText(
             getAny(row, ['VALORFOMENTO', 'VALORFOMENTOLOTERICO', 'VALOR']),
