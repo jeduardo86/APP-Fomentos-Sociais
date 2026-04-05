@@ -28,10 +28,10 @@ export function MobileBottomNav({
 
               <button
                 type="button"
-                className={activeMenu === 'operacional' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
-                onClick={() => handleSelectMobileMenu('operacional')}
+                className={activeMenu === 'destinacoes' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
+                onClick={() => handleSelectMobileMenu('destinacoes')}
               >
-                Operacional
+                Destinações
               </button>
               <button
                 type="button"

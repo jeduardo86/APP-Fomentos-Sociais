@@ -1,7 +1,7 @@
 import { NumericFormat } from 'react-number-format'
 import { pagamentoOptions } from '../lib/constants'
 
-export function OperationalMenuSection({
+export function DestinationsMenuSection({
   activeTab,
   competenciaFromDate,
   createInitialEntidadeForm,
@@ -20,7 +20,7 @@ export function OperationalMenuSection({
   handleConfirmarPagamento,
   handleIniciarDestinacaoPorEmpresa,
   handleSalvarDestinacao,
-  operationalTabs,
+  destinationTabs,
   pagamentoForm,
   pendentes,
   processosEmpresa,
@@ -47,9 +47,9 @@ export function OperationalMenuSection({
 }) {
   return (
     <article className="panel panel-soft sm:p-6">
-      <nav className="rounded-2xl border border-slate-200/70 bg-white/70 p-2" aria-label="Navegação operacional">
+      <nav className="rounded-2xl border border-slate-200/70 bg-white/70 p-2" aria-label="Navegação de destinações">
         <div className="flex flex-wrap gap-2">
-          {operationalTabs.map((tab) => (
+          {destinationTabs.map((tab) => (
             <button
               key={tab.id}
               type="button"

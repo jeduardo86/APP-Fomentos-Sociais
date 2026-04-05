@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react'
 
-export function useOperationalData({
+export function useDestinationData({
   baseCsv,
   destinacoes,
   empresaSelecionada,

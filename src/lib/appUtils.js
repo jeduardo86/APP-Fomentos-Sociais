@@ -1,6 +1,6 @@
 import { formatCurrency, sanitizeCNPJ } from './formatters'
 
-export const operationalTabs = [
+export const destinationTabs = [
   { id: 'gerencial', label: 'Painel gerencial' },
   { id: 'destinacao', label: 'Destinações' },
   { id: 'pagamento', label: 'Confirmação de pagamento' },

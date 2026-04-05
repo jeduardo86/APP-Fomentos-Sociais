@@ -118,39 +118,34 @@ export async function createDestinacao(payload) {
 
   const createdAt = new Date().toISOString()
 
-  return runTransaction(db, async (transaction) => {
-    const baseRef = doc(db, 'base_csv', toSafeDocId(processoId))
-    const baseSnapshot = await transaction.get(baseRef)
+  const baseRef = doc(db, 'base_csv', toSafeDocId(processoId))
+  const baseSnapshot = await getDoc(baseRef)
 
-    const limiteProcesso = normalizeMoney(
-      baseSnapshot.exists() ? baseSnapshot.data()?.valorFomento : payload?.valorFomento,
-    )
+  const limiteProcesso = normalizeMoney(
+    baseSnapshot.exists() ? baseSnapshot.data()?.valorFomento : payload?.valorFomento,
+  )
 
-    if (limiteProcesso <= 0) {
-      throw new Error('Não foi possível determinar o limite de fomento para este processo.')
-    }
+  if (limiteProcesso <= 0) {
+    throw new Error('Não foi possível determinar o limite de fomento para este processo.')
+  }
 
-    const existentesQuery = query(collections.destinacoes, where('processoId', '==', processoId))
-    const existentesSnapshot = await transaction.get(existentesQuery)
+  const existentesQuery = query(collections.destinacoes, where('processoId', '==', processoId))
+  const existentesSnapshot = await getDocs(existentesQuery)
 
-    const totalJaDestinado = normalizeMoney(
-      existentesSnapshot.docs.reduce((acc, entry) => acc + Number(entry.data().valorDestinado || 0), 0),
-    )
+  const totalJaDestinado = normalizeMoney(
+    existentesSnapshot.docs.reduce((acc, entry) => acc + Number(entry.data().valorDestinado || 0), 0),
+  )
 
-    if (totalJaDestinado + valorDestinado > limiteProcesso) {
-      throw new Error('Saldo insuficiente para este processo no momento da gravação.')
-    }
+  if (totalJaDestinado + valorDestinado > limiteProcesso) {
+    throw new Error('Saldo insuficiente para este processo no momento da gravação.')
+  }
 
-    const newRef = doc(collections.destinacoes)
-    transaction.set(newRef, {
-      ...payload,
-      valorFomento: limiteProcesso,
-      valorDestinado,
-      createdAt: payload?.createdAt || createdAt,
-      updatedAt: createdAt,
-    })
-
-    return newRef
+  return addDoc(collections.destinacoes, {
+    ...payload,
+    valorFomento: limiteProcesso,
+    valorDestinado,
+    createdAt: payload?.createdAt || createdAt,
+    updatedAt: createdAt,
   })
 }
 
