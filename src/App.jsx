@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { NumericFormat } from 'react-number-format'
 import toast, { Toaster } from 'react-hot-toast'
+import html2canvas from 'html2canvas'
+import { jsPDF } from 'jspdf'
 import { categoriaDescriptions, categoriaOptions, pagamentoOptions } from './lib/constants'
 import {
   formatCurrency,
@@ -32,6 +34,7 @@ import {
   subscribeUsers,
   syncBaseCsv,
   updateUserAccess,
+  updateUserName,
   updateUserRole,
 } from './services/firestoreService'
 
@@ -107,6 +110,9 @@ function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('destinacao')
   const [activeCadastroTab, setActiveCadastroTab] = useState('empresas')
+  const [reportProcessoId, setReportProcessoId] = useState('')
+  const [reportDataEmissao, setReportDataEmissao] = useState(todayInputDate)
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
   const [csvUrl, setCsvUrl] = useState('')
   const [isSyncing, setIsSyncing] = useState(false)
   const [isSavingCsvLink, setIsSavingCsvLink] = useState(false)
@@ -142,9 +148,14 @@ function App() {
   const [usersList, setUsersList] = useState([])
   const [roleBusyUserId, setRoleBusyUserId] = useState('')
   const [accessBusyUserId, setAccessBusyUserId] = useState('')
+  const [nameBusyUserId, setNameBusyUserId] = useState('')
+  const [editingUserId, setEditingUserId] = useState('')
+  const [editingUserName, setEditingUserName] = useState('')
   const [isRevokingBlockedSession, setIsRevokingBlockedSession] = useState(false)
   const [isCreatingUser, setIsCreatingUser] = useState(false)
+  const [isCreateUserFormVisible, setIsCreateUserFormVisible] = useState(false)
   const [newUserForm, setNewUserForm] = useState({
+    nome: '',
     email: '',
     password: '',
     role: 'OPERADOR',
@@ -158,6 +169,7 @@ function App() {
   })
 
   const isAdmin = userProfile?.role === 'admin' && userProfile?.blocked !== true
+  const reportContentRef = useRef(null)
   const canAccessCadastroBase = Boolean(user && userProfile && userProfile?.blocked !== true)
   const visibleCadastroTabs = isAdmin
     ? cadastroTabs
@@ -283,6 +295,9 @@ function App() {
   useEffect(() => {
     if (!user || !isAdmin || userProfile?.blocked === true) {
       setUsersList([])
+      setEditingUserId('')
+      setEditingUserName('')
+      setIsCreateUserFormVisible(false)
       return undefined
     }
 
@@ -307,6 +322,73 @@ function App() {
       new Set(baseCsv.map((item) => String(item.empresa || '').trim()).filter(Boolean)),
     ).sort((a, b) => a.localeCompare(b))
   }, [baseCsv])
+
+  const processosParaRelatorio = useMemo(
+    () =>
+      Array.from(
+        new Set(baseCsv.map((item) => String(item.processoId || '').trim()).filter(Boolean)),
+      ).sort((a, b) => a.localeCompare(b)),
+    [baseCsv],
+  )
+
+  const reportProcessoIdNormalizado = useMemo(
+    () => String(reportProcessoId || '').trim(),
+    [reportProcessoId],
+  )
+
+  const isProcessoRelatorioValido = useMemo(
+    () =>
+      Boolean(reportProcessoIdNormalizado) &&
+      processosParaRelatorio.includes(reportProcessoIdNormalizado),
+    [processosParaRelatorio, reportProcessoIdNormalizado],
+  )
+
+  const processoSelecionadoRelatorio = useMemo(
+    () =>
+      baseCsv.find((item) => String(item.processoId || '').trim() === reportProcessoIdNormalizado) ||
+      null,
+    [baseCsv, reportProcessoIdNormalizado],
+  )
+
+  const destinacoesRelatorio = useMemo(() => {
+    const processoId = reportProcessoIdNormalizado
+
+    if (!processoId) {
+      return []
+    }
+
+    return destinacoes
+      .filter((item) => String(item.processoId || '').trim() === processoId)
+      .sort((a, b) => String(a.solicitacaoData || '').localeCompare(String(b.solicitacaoData || '')))
+  }, [destinacoes, reportProcessoIdNormalizado])
+
+  const totalDestinadoRelatorio = useMemo(
+    () => destinacoesRelatorio.reduce((acc, item) => acc + Number(item.valorDestinado || 0), 0),
+    [destinacoesRelatorio],
+  )
+
+  const entidadesRelatorio = useMemo(
+    () =>
+      Array.from(
+        new Set(destinacoesRelatorio.map((item) => String(item.entidadeNome || '').trim()).filter(Boolean)),
+      ).sort((a, b) => a.localeCompare(b)),
+    [destinacoesRelatorio],
+  )
+
+  const usuarioAssinaturaRelatorio =
+    userProfile?.nome || user?.displayName || user?.email || userProfile?.email || 'Usuário responsável'
+
+  const dataEmissaoRelatorioExtenso = useMemo(() => {
+    const fallbackDate = new Date()
+    const date = reportDataEmissao ? new Date(`${reportDataEmissao}T12:00:00`) : fallbackDate
+    const validDate = Number.isNaN(date.getTime()) ? fallbackDate : date
+
+    return validDate.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    })
+  }, [reportDataEmissao])
 
   const processosEmpresa = useMemo(() => {
     if (!empresaSelecionada) {
@@ -570,6 +652,66 @@ function App() {
     setSelectedProcessIds([])
     setSelectedProcessValues({})
     setFiltroProcessoDestinacao('')
+  }
+
+  async function handleBaixarRelatorioPdf() {
+    if (isGeneratingPdf) {
+      return
+    }
+
+    if (!isProcessoRelatorioValido) {
+      toast.error('Selecione um processo válido da lista para baixar o relatório.')
+      return
+    }
+
+    const reportContent = reportContentRef.current
+
+    if (!reportContent) {
+      toast.error('Não foi possível localizar o conteúdo do relatório para gerar PDF.')
+      return
+    }
+
+    setIsGeneratingPdf(true)
+
+    try {
+      const canvas = await html2canvas(reportContent, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+      })
+
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const imgWidth = pageWidth
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+
+      if (imgHeight <= pageHeight) {
+        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
+      } else {
+        let heightLeft = imgHeight
+        let position = 0
+
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pageHeight
+
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight
+          pdf.addPage()
+          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+          heightLeft -= pageHeight
+        }
+      }
+
+      const safeProcessoId = String(reportProcessoIdNormalizado).replace(/[^a-zA-Z0-9-_]/g, '_')
+      pdf.save(`relatorio-destinacao-social-${safeProcessoId}.pdf`)
+      toast.success('PDF gerado com sucesso.')
+    } catch {
+      toast.error('Não foi possível gerar o PDF do relatório.')
+    } finally {
+      setIsGeneratingPdf(false)
+    }
   }
 
   useEffect(() => {
@@ -951,6 +1093,42 @@ function App() {
     }
   }
 
+  function handleStartEditUserName(entry) {
+    setEditingUserId(entry.uid)
+    setEditingUserName(String(entry.nome || ''))
+  }
+
+  function handleCancelEditUserName() {
+    setEditingUserId('')
+    setEditingUserName('')
+  }
+
+  async function handleUpdateUserName(targetUserId, nextName) {
+    if (!user || !isAdmin) {
+      toast.error('Apenas administradores podem atualizar nomes.')
+      return
+    }
+
+    const normalizedName = String(nextName || '').trim()
+
+    if (!normalizedName) {
+      toast.error('Informe um nome válido para o usuário.')
+      return
+    }
+
+    setNameBusyUserId(targetUserId)
+
+    try {
+      await updateUserName(targetUserId, normalizedName, user.uid)
+      toast.success('Nome do usuário atualizado com sucesso.')
+      handleCancelEditUserName()
+    } catch {
+      toast.error('Falha ao atualizar o nome do usuário.')
+    } finally {
+      setNameBusyUserId('')
+    }
+  }
+
   async function handleCadastrarUsuario(event) {
     event.preventDefault()
 
@@ -959,11 +1137,12 @@ function App() {
       return
     }
 
+    const normalizedNome = newUserForm.nome.trim()
     const normalizedEmail = newUserForm.email.trim().toLowerCase()
     const normalizedPassword = newUserForm.password.trim()
 
-    if (!normalizedEmail || !normalizedPassword) {
-      toast.error('Informe email e senha para o novo usuário.')
+    if (!normalizedNome || !normalizedEmail || !normalizedPassword) {
+      toast.error('Informe nome, email e senha para o novo usuário.')
       return
     }
 
@@ -987,12 +1166,13 @@ function App() {
       const createdUser = await createUserByAdmin(normalizedEmail, normalizedPassword)
       await createUserProfileByAdmin(
         createdUser.uid,
+        normalizedNome,
         normalizedEmail,
         newUserForm.role,
         user.uid,
       )
 
-      setNewUserForm({ email: '', password: '', role: 'OPERADOR' })
+      setNewUserForm({ nome: '', email: '', password: '', role: 'OPERADOR' })
       toast.success('Usuário cadastrado com sucesso.')
     } catch (error) {
       toast.error(error.message || 'Não foi possível cadastrar o usuário.')
@@ -1096,13 +1276,13 @@ function App() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-app-pattern px-4 pb-24 pt-6 text-zinc-900 sm:px-6 lg:px-8 lg:pb-6">
+    <div className="app-shell relative min-h-screen overflow-hidden bg-app-pattern px-4 pb-24 pt-6 text-zinc-900 sm:px-6 lg:px-8 lg:pb-6">
       <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-cyan-300/30 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-28 -right-16 h-72 w-72 rounded-full bg-orange-300/30 blur-3xl" />
       <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
 
-      <main className="relative z-10 mx-auto flex w-full max-w-7xl gap-6 lg:items-stretch">
-        <aside className="hidden w-72 shrink-0 lg:block lg:self-stretch">
+      <main className="relative z-10 mx-auto flex w-full max-w-[1720px] gap-6 lg:items-stretch">
+        <aside className="hidden w-64 shrink-0 lg:block lg:self-stretch xl:w-72">
           <div className="panel panel-soft flex h-full flex-col">
             <div className="space-y-5">
               <div>
@@ -1124,6 +1304,13 @@ function App() {
                   onClick={() => setActiveMenu('cadastros')}
                 >
                   Cadastros
+                </button>
+                <button
+                  type="button"
+                  className={activeMenu === 'relatorios' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
+                  onClick={() => setActiveMenu('relatorios')}
+                >
+                  Relatórios
                 </button>
                 <button
                   type="button"
@@ -1178,7 +1365,7 @@ function App() {
                   Controle de Destinação de Fomentos Sociais
                 </h1>
                 <p className="mt-3 max-w-2xl break-words text-sm text-zinc-600 sm:text-base">
-                  Use o menu para alternar entre a operação diária e as configurações do sistema.
+                  Use o menu para alternar entre operação diária, cadastros, relatórios e configurações do sistema.
                 </p>
               </div>
             </div>
@@ -1904,75 +2091,110 @@ function App() {
 
               {isAdmin && activeCadastroTab === 'usuarios' && (
                 <section className="mt-5 animate-in space-y-4">
-                  <h2 className="text-lg font-semibold text-zinc-900">Cadastro de usuários</h2>
-                  <p className="text-sm text-zinc-600">
-                    Promova ou reverta perfis entre OPERADOR e admin, e bloqueie ou libere o acesso.
-                  </p>
-
-                  <form
-                    className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:grid-cols-3"
-                    onSubmit={handleCadastrarUsuario}
-                  >
-                    <div className="sm:col-span-2">
-                      <label className="field-label" htmlFor="novoUsuarioEmail">
-                        Email
-                      </label>
-                      <input
-                        id="novoUsuarioEmail"
-                        className="field-input"
-                        type="email"
-                        value={newUserForm.email}
-                        onChange={(event) =>
-                          setNewUserForm((current) => ({ ...current, email: event.target.value }))
-                        }
-                        placeholder="usuario@dominio.com"
-                      />
-                    </div>
-
+                  <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <label className="field-label" htmlFor="novoUsuarioRole">
-                        Perfil
-                      </label>
-                      <select
-                        id="novoUsuarioRole"
-                        className="field-input"
-                        value={newUserForm.role}
-                        onChange={(event) =>
-                          setNewUserForm((current) => ({ ...current, role: event.target.value }))
-                        }
-                      >
-                        <option value="OPERADOR">OPERADOR</option>
-                        <option value="admin">ADMIN</option>
-                      </select>
+                      <h2 className="text-lg font-semibold text-zinc-900">Cadastro de usuários</h2>
+                      <p className="text-sm text-zinc-600">
+                        Promova ou reverta perfis entre OPERADOR e admin, e bloqueie ou libere o acesso.
+                      </p>
                     </div>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
+                      onClick={() => {
+                        setIsCreateUserFormVisible((current) => !current)
 
-                    <div className="sm:col-span-2">
-                      <label className="field-label" htmlFor="novoUsuarioSenha">
-                        Senha provisória
-                      </label>
-                      <input
-                        id="novoUsuarioSenha"
-                        className="field-input"
-                        type="password"
-                        value={newUserForm.password}
-                        onChange={(event) =>
-                          setNewUserForm((current) => ({ ...current, password: event.target.value }))
+                        if (isCreateUserFormVisible) {
+                          setNewUserForm({ nome: '', email: '', password: '', role: 'OPERADOR' })
                         }
-                        placeholder="Mínimo 6 caracteres"
-                      />
-                    </div>
+                      }}
+                    >
+                      {isCreateUserFormVisible ? 'Cancelar novo usuário' : 'Adicionar usuário'}
+                    </button>
+                  </div>
 
-                    <div className="sm:col-span-1 sm:self-end">
-                      <button className="btn-primary w-full" type="submit" disabled={isCreatingUser}>
-                        {isCreatingUser ? 'Cadastrando...' : 'Cadastrar usuario'}
-                      </button>
-                    </div>
-                  </form>
+                  {isCreateUserFormVisible && (
+                    <form
+                      className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:grid-cols-3"
+                      onSubmit={handleCadastrarUsuario}
+                    >
+                      <div className="sm:col-span-2">
+                        <label className="field-label" htmlFor="novoUsuarioNome">
+                          Nome
+                        </label>
+                        <input
+                          id="novoUsuarioNome"
+                          className="field-input"
+                          value={newUserForm.nome}
+                          onChange={(event) =>
+                            setNewUserForm((current) => ({ ...current, nome: event.target.value }))
+                          }
+                          placeholder="Nome completo"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="field-label" htmlFor="novoUsuarioEmail">
+                          Email
+                        </label>
+                        <input
+                          id="novoUsuarioEmail"
+                          className="field-input"
+                          type="email"
+                          value={newUserForm.email}
+                          onChange={(event) =>
+                            setNewUserForm((current) => ({ ...current, email: event.target.value }))
+                          }
+                          placeholder="usuario@dominio.com"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="field-label" htmlFor="novoUsuarioRole">
+                          Perfil
+                        </label>
+                        <select
+                          id="novoUsuarioRole"
+                          className="field-input"
+                          value={newUserForm.role}
+                          onChange={(event) =>
+                            setNewUserForm((current) => ({ ...current, role: event.target.value }))
+                          }
+                        >
+                          <option value="OPERADOR">OPERADOR</option>
+                          <option value="admin">ADMIN</option>
+                        </select>
+                      </div>
+
+                      <div className="sm:col-span-2">
+                        <label className="field-label" htmlFor="novoUsuarioSenha">
+                          Senha provisória
+                        </label>
+                        <input
+                          id="novoUsuarioSenha"
+                          className="field-input"
+                          type="password"
+                          value={newUserForm.password}
+                          onChange={(event) =>
+                            setNewUserForm((current) => ({ ...current, password: event.target.value }))
+                          }
+                          placeholder="Mínimo 6 caracteres"
+                        />
+                      </div>
+
+                      <div className="sm:col-span-1 sm:self-end">
+                        <button className="btn-primary w-full" type="submit" disabled={isCreatingUser}>
+                          {isCreatingUser ? 'Cadastrando...' : 'Cadastrar usuario'}
+                        </button>
+                      </div>
+                    </form>
+                  )}
 
                   <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white/80">
                     <table className="min-w-full border-collapse text-left text-sm">
                       <thead className="bg-slate-100/90 text-zinc-600">
                         <tr>
+                          <th className="px-4 py-3">Nome</th>
                           <th className="px-4 py-3">Email</th>
                           <th className="px-4 py-3">UID</th>
                           <th className="px-4 py-3">Perfil</th>
@@ -1983,7 +2205,7 @@ function App() {
                       <tbody>
                         {usersList.length === 0 && (
                           <tr>
-                            <td colSpan="5" className="px-4 py-4 text-zinc-500">
+                            <td colSpan="6" className="px-4 py-4 text-zinc-500">
                               Nenhum usuario encontrado.
                             </td>
                           </tr>
@@ -1995,9 +2217,24 @@ function App() {
                           const isBlocked = entry.blocked === true
                           const isRoleBusy = roleBusyUserId === entry.uid
                           const isAccessBusy = accessBusyUserId === entry.uid
+                          const isNameBusy = nameBusyUserId === entry.uid
+                          const isEditingName = editingUserId === entry.uid
 
                           return (
                             <tr key={entry.uid} className="border-t border-slate-100/80 even:bg-slate-50/70">
+                              <td className="px-4 py-3 text-zinc-700 min-w-[220px]">
+                                {isEditingName ? (
+                                  <input
+                                    className="field-input py-2"
+                                    value={editingUserName}
+                                    onChange={(event) => setEditingUserName(event.target.value)}
+                                    placeholder="Nome completo"
+                                    aria-label={`Nome do usuário ${entry.email || entry.uid}`}
+                                  />
+                                ) : (
+                                  entry.nome || '--'
+                                )}
+                              </td>
                               <td className="px-4 py-3 font-medium text-zinc-900">{entry.email || '--'}</td>
                               <td className="px-4 py-3 text-sm text-zinc-500">{entry.uid}</td>
                               <td className="px-4 py-3">
@@ -2023,35 +2260,72 @@ function App() {
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-right">
-                                <div className="flex justify-end gap-2">
-                                  <button
-                                    type="button"
-                                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                                    onClick={() => handleUpdateRole(entry.uid, nextRole)}
-                                    disabled={isSelf || isRoleBusy || isAccessBusy}
-                                  >
-                                    {isRoleBusy
-                                      ? 'Atualizando perfil...'
-                                      : isSelf
-                                        ? 'Usuário atual'
-                                        : `Tornar ${nextRole.toUpperCase()}`}
-                                  </button>
+                                {isEditingName ? (
+                                  <div className="flex flex-wrap justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                      onClick={() => handleCancelEditUserName()}
+                                      disabled={isNameBusy}
+                                    >
+                                      Cancelar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                      onClick={() => handleUpdateUserName(entry.uid, editingUserName)}
+                                      disabled={isNameBusy}
+                                    >
+                                      {isNameBusy ? 'Salvando nome...' : 'Salvar nome'}
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-wrap justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                      onClick={() => handleStartEditUserName(entry)}
+                                      disabled={isRoleBusy || isAccessBusy || isNameBusy}
+                                    >
+                                      Editar
+                                    </button>
+                                    {isSelf ? (
+                                      <button
+                                        type="button"
+                                        className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-zinc-600"
+                                        disabled
+                                      >
+                                        Usuário atual
+                                      </button>
+                                    ) : (
+                                      <>
+                                        <button
+                                          type="button"
+                                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                          onClick={() => handleUpdateRole(entry.uid, nextRole)}
+                                          disabled={isRoleBusy || isAccessBusy || isNameBusy}
+                                        >
+                                          {isRoleBusy
+                                            ? 'Atualizando perfil...'
+                                            : `Tornar ${nextRole.toUpperCase()}`}
+                                        </button>
 
-                                  <button
-                                    type="button"
-                                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                                    onClick={() => handleToggleUserAccess(entry.uid, !isBlocked)}
-                                    disabled={isSelf || isAccessBusy || isRoleBusy}
-                                  >
-                                    {isAccessBusy
-                                      ? 'Atualizando acesso...'
-                                      : isSelf
-                                        ? 'Usuário atual'
-                                        : isBlocked
-                                          ? 'Liberar acesso'
-                                          : 'Bloquear acesso'}
-                                  </button>
-                                </div>
+                                        <button
+                                          type="button"
+                                          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                          onClick={() => handleToggleUserAccess(entry.uid, !isBlocked)}
+                                          disabled={isAccessBusy || isRoleBusy || isNameBusy}
+                                        >
+                                          {isAccessBusy
+                                            ? 'Atualizando acesso...'
+                                            : isBlocked
+                                              ? 'Liberar acesso'
+                                              : 'Bloquear acesso'}
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           )
@@ -2110,6 +2384,142 @@ function App() {
                   <p>Pagamentos pendentes: {pendentes.length}</p>
                 </div>
               </article>
+            </section>
+          )}
+
+          {activeMenu === 'relatorios' && (
+            <section className="panel panel-soft space-y-5 sm:p-6">
+              <div className="report-controls grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:grid-cols-3">
+                <div className="sm:col-span-2">
+                  <label className="field-label" htmlFor="reportProcessoId">
+                    Processo para emissão
+                  </label>
+                  <input
+                    id="reportProcessoId"
+                    className="field-input"
+                    value={reportProcessoId}
+                    onChange={(event) => setReportProcessoId(event.target.value)}
+                    placeholder="Digite para pesquisar um processo"
+                    list="reportProcessoOptions"
+                  />
+                  <datalist id="reportProcessoOptions">
+                    {processosParaRelatorio.map((processoId) => (
+                      <option key={processoId} value={processoId}>
+                        {processoId}
+                      </option>
+                    ))}
+                  </datalist>
+                </div>
+
+                <div>
+                  <label className="field-label" htmlFor="reportDataEmissao">
+                    Data de emissão
+                  </label>
+                  <input
+                    id="reportDataEmissao"
+                    className="field-input"
+                    type="date"
+                    value={reportDataEmissao}
+                    onChange={(event) => setReportDataEmissao(event.target.value)}
+                  />
+                </div>
+
+                <div className="sm:col-span-3 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-zinc-600">
+                    Relatório formal para instrução processual sobre existência de destinação social.
+                  </p>
+                  <button
+                    className="btn-primary"
+                    type="button"
+                    onClick={handleBaixarRelatorioPdf}
+                    disabled={isGeneratingPdf || !isProcessoRelatorioValido}
+                  >
+                    {isGeneratingPdf ? 'Gerando PDF...' : 'Baixar PDF'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="report-print-area">
+                <article
+                  ref={reportContentRef}
+                  className="report-a4 rounded-2xl border border-slate-200 bg-white text-zinc-900 shadow-sm"
+                >
+                  <header className="border-b border-zinc-300 pb-3 text-center">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
+                      Governo do Estado da Paraiba
+                    </p>
+                    <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
+                      Loteria do Estado da Paraíba
+                    </p>
+                    <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
+                      Assessoria de Políticas Públicas
+                    </p>
+                    <br />
+                    <br />
+                    <h2 className="mt-2 text-base font-semibold uppercase tracking-[0.08em] text-zinc-900">
+                      Relatório de Verificação de Destinação Social
+                    </h2>
+                  </header>
+
+                  <section className="mt-6 space-y-4 text-[13.5px] leading-relaxed text-zinc-800">
+                    {!reportProcessoId && (
+                      <p>
+                        Selecione um processo para gerar o relatório institucional de verificação de destinação social.
+                      </p>
+                    )}
+
+                    {reportProcessoId && (
+                      <>
+                        <p>
+                          Aos {dataEmissaoRelatorioExtenso}, em atendimento à consulta registrada no processo
+                          administrativo, certificamos formalmente a situação da destinação social vinculada ao
+                          processo nº <strong>{reportProcessoId}</strong>.
+                        </p>
+
+                        {destinacoesRelatorio.length > 0 ? (
+                          <>
+                            <p>
+                              Após análise dos registros institucionais disponíveis no sistema de controle de
+                              fomentos, <strong>constata-se que houve destinação social de recursos</strong> para o
+                              referido processo, no montante total de{' '}
+                              <strong>{formatCurrency(totalDestinadoRelatorio)}</strong>.
+                            </p>
+
+                            <p>
+                              As destinações foram direcionadas às seguintes entidades:{' '}
+                              <strong>{entidadesRelatorio.join('; ') || 'entidade não identificada'}</strong>.
+                            </p>
+
+                            <p>
+                              Dados complementares do processo: empresa{' '}
+                              <strong>{processoSelecionadoRelatorio?.empresa || 'não informada'}</strong>, produto{' '}
+                              <strong>{processoSelecionadoRelatorio?.produto || 'não informado'}</strong>.
+                            </p>
+                          </>
+                        ) : (
+                          <p>
+                            Após análise dos registros institucionais disponíveis no sistema de controle de
+                            fomentos, <strong>não foram localizadas destinações sociais registradas</strong> para o
+                            processo informado até a presente data.
+                          </p>
+                        )}
+
+                        <p>
+                          Este relatório é emitido para fins de juntada aos autos e comprovação formal da situação
+                          de destinação social do processo consultado.
+                        </p>
+                      </>
+                    )}
+                  </section>
+
+                  <footer className="mt-16 text-center">
+                    <p className="text-xs uppercase tracking-[0.14em] text-zinc-500">Responsável pela emissão</p>
+                    <p className="mt-10 text-sm font-semibold uppercase tracking-[0.06em] text-zinc-900">
+                      {usuarioAssinaturaRelatorio}
+                    </p>
+                  </footer>
+                </article>
+              </div>
             </section>
           )}
         </section>
@@ -2232,6 +2642,13 @@ function App() {
                 </button>
                 <button
                   type="button"
+                  className={activeMenu === 'relatorios' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
+                  onClick={() => handleSelectMobileMenu('relatorios')}
+                >
+                  Relatórios
+                </button>
+                <button
+                  type="button"
                   className={activeMenu === 'configuracoes' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
                   onClick={() => handleSelectMobileMenu('configuracoes')}
                 >
@@ -2276,6 +2693,7 @@ function App() {
           </button>
         </div>
       </nav>
+
     </div>
   )
 }

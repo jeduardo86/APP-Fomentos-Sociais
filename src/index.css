@@ -112,3 +112,11 @@
     transform: translateY(0);
   }
 }
+
+.report-a4 {
+  width: min(100%, 210mm);
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 10mm;
+  box-sizing: border-box;
+}

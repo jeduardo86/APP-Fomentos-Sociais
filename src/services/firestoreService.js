@@ -241,6 +241,7 @@ export async function ensureUserProfile(user) {
         const now = new Date().toISOString()
         const profile = {
           uid: user.uid,
+          nome: String(user?.displayName || '').trim(),
           email: String(user?.email || '').trim().toLowerCase(),
           role: 'OPERADOR',
           blocked: false,
@@ -324,10 +325,20 @@ export async function updateUserAccess(userId, blocked, adminUid) {
   })
 }
 
-export async function createUserProfileByAdmin(userId, email, role, adminUid) {
+export async function updateUserName(userId, nome, adminUid) {
+  const ref = doc(db, 'users', userId)
+  await updateDoc(ref, {
+    nome: String(nome || '').trim(),
+    updatedAt: new Date().toISOString(),
+    updatedBy: adminUid,
+  })
+}
+
+export async function createUserProfileByAdmin(userId, nome, email, role, adminUid) {
   const ref = doc(db, 'users', userId)
   await setDoc(ref, {
     uid: userId,
+    nome: String(nome || '').trim(),
     email: email || '',
     role,
     blocked: false,
