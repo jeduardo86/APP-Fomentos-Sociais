@@ -77,13 +77,13 @@ export function ReportsMenuSection({
           className="report-a4 rounded-2xl border border-slate-200 bg-white text-zinc-900 shadow-sm"
         >
           <header className="border-b border-zinc-300 pb-3 text-center">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
+            <p className="text-base font-semibold uppercase tracking-[0.16em] text-zinc-600">
               Governo do Estado da Paraiba
             </p>
-            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
+            <p className="mt-1 text-base font-semibold uppercase tracking-[0.16em] text-zinc-600">
               Loteria do Estado da Paraíba
             </p>
-            <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
+            <p className="mt-1 text-base font-semibold uppercase tracking-[0.16em] text-zinc-600">
               Assessoria de Políticas Públicas
             </p>
             <br />
@@ -93,14 +93,14 @@ export function ReportsMenuSection({
             </h2>
           </header>
 
-          <section className="mt-6 space-y-4 text-[13.5px] leading-relaxed text-zinc-800">
+          <section className="mt-6 space-y-4 text-justify text-[13.5px] leading-relaxed text-zinc-800">
             {!reportProcessoId && (
               <p>Selecione um processo para gerar o relatório institucional de verificação de destinação social.</p>
             )}
 
             {reportProcessoId && (
               <>
-                <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-[12.5px] leading-relaxed text-zinc-700">
+                <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-justify text-[12.5px] leading-relaxed text-zinc-700">
                   <p>
                     De acordo com a Instrução Normativa nº 001/2024, que regulamenta a modalidade passiva,
                     os recursos correspondentes a <strong>7,5% da totalidade dos prêmios</strong> devem ser

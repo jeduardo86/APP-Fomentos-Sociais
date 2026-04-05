@@ -3681,7 +3681,7 @@ function App() {
                     </h2>
                   </header>
 
-                  <section className="mt-6 space-y-4 text-[13.5px] leading-relaxed text-zinc-800">
+                  <section className="mt-6 space-y-4 text-justify text-[13.5px] leading-relaxed text-zinc-800">
                     {!reportProcessoId && (
                       <p>
                         Selecione um processo para gerar o relatório institucional de verificação de destinação social.
