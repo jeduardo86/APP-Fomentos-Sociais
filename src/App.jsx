@@ -1101,67 +1101,71 @@ function App() {
       <div className="pointer-events-none absolute -bottom-28 -right-16 h-72 w-72 rounded-full bg-orange-300/30 blur-3xl" />
       <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
 
-      <main className="relative z-10 mx-auto flex w-full max-w-7xl gap-6 lg:items-start">
-        <aside className="hidden w-72 shrink-0 lg:sticky lg:top-6 lg:block">
-          <div className="panel panel-soft space-y-5">
-            <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-cyan-700">Navegação</p>
-              <h2 className="mt-2 text-2xl font-semibold text-zinc-900">Menu principal</h2>
+      <main className="relative z-10 mx-auto flex w-full max-w-7xl gap-6 lg:items-stretch">
+        <aside className="hidden w-72 shrink-0 lg:block lg:self-stretch">
+          <div className="panel panel-soft flex h-full flex-col">
+            <div className="space-y-5">
+              <div>
+                <p className="text-sm uppercase tracking-[0.2em] text-cyan-700">Navegação</p>
+                <h2 className="mt-2 text-2xl font-semibold text-zinc-900">Menu principal</h2>
+              </div>
+
+              <nav className="space-y-2" aria-label="Menu principal">
+                <button
+                  type="button"
+                  className={activeMenu === 'operacional' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
+                  onClick={() => setActiveMenu('operacional')}
+                >
+                  Operacional
+                </button>
+                <button
+                  type="button"
+                  className={activeMenu === 'cadastros' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
+                  onClick={() => setActiveMenu('cadastros')}
+                >
+                  Cadastros
+                </button>
+                <button
+                  type="button"
+                  className={activeMenu === 'configuracoes' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
+                  onClick={() => setActiveMenu('configuracoes')}
+                >
+                  Configurações
+                </button>
+              </nav>
             </div>
 
-            <nav className="space-y-2" aria-label="Menu principal">
-              <button
-                type="button"
-                className={activeMenu === 'operacional' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
-                onClick={() => setActiveMenu('operacional')}
-              >
-                Operacional
-              </button>
-              <button
-                type="button"
-                className={activeMenu === 'cadastros' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
-                onClick={() => setActiveMenu('cadastros')}
-              >
-                Cadastros
-              </button>
-              <button
-                type="button"
-                className={activeMenu === 'configuracoes' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
-                onClick={() => setActiveMenu('configuracoes')}
-              >
-                Configurações
-              </button>
-            </nav>
+            <div className="mt-auto space-y-5 pt-5">
+              <div className="rounded-2xl border border-cyan-200 bg-cyan-50/80 px-4 py-3">
+                <p className="text-sm uppercase tracking-[0.14em] text-cyan-700">Operação ativa</p>
+                <p className="mt-1 break-all text-sm font-semibold text-cyan-900">{user.email || user.uid}</p>
+                <p className="mt-1 text-sm font-semibold uppercase tracking-[0.14em] text-cyan-700">
+                  Perfil: {isAdmin ? 'ADMIN' : 'OPERADOR'}
+                </p>
+              </div>
 
-            <div className="rounded-2xl border border-cyan-200 bg-cyan-50/80 px-4 py-3">
-              <p className="text-sm uppercase tracking-[0.14em] text-cyan-700">Operação ativa</p>
-              <p className="mt-1 break-all text-sm font-semibold text-cyan-900">{user.email || user.uid}</p>
-              <p className="mt-1 text-sm font-semibold uppercase tracking-[0.14em] text-cyan-700">
-                Perfil: {isAdmin ? 'ADMIN' : 'OPERADOR'}
-              </p>
+              <button
+                type="button"
+                className={
+                  isLargeFontEnabled
+                    ? 'w-full rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-left text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100'
+                    : 'w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-left text-sm font-semibold text-zinc-700 transition hover:bg-slate-50'
+                }
+                onClick={handleToggleFontSize}
+                aria-pressed={isLargeFontEnabled}
+                title="Alternar modo de fonte grande"
+              >
+                {isLargeFontEnabled ? 'Fonte grande: ligada' : 'Fonte grande: desligada'}
+              </button>
+
+              <button
+                type="button"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
+                onClick={handleLogout}
+              >
+                Sair
+              </button>
             </div>
-
-            <button
-              type="button"
-              className={
-                isLargeFontEnabled
-                  ? 'w-full rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-left text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100'
-                  : 'w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-left text-sm font-semibold text-zinc-700 transition hover:bg-slate-50'
-              }
-              onClick={handleToggleFontSize}
-              aria-pressed={isLargeFontEnabled}
-              title="Alternar modo de fonte grande"
-            >
-              {isLargeFontEnabled ? 'Fonte grande: ligada' : 'Fonte grande: desligada'}
-            </button>
-
-            <button
-              type="button"
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
-              onClick={handleLogout}
-            >
-              Sair
-            </button>
           </div>
         </aside>
 
@@ -1179,7 +1183,7 @@ function App() {
               </div>
             </div>
 
-            <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-5">
+            <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <article className="card-metric">
                 <p>Total em fomentos</p>
                 <strong title={formatCurrency(totalEmFomentos)}>
@@ -1202,7 +1206,7 @@ function App() {
                 <p>Saldo a pagar</p>
                 <strong title={formatCurrency(saldoAPagar)}>{formatCurrencyCompact(saldoAPagar)}</strong>
               </article>
-              <article className="card-metric col-span-2 sm:col-span-2">
+              <article className="card-metric text-center sm:col-span-2 xl:col-span-4">
                 <p>Saldo sem destinação</p>
                 <strong title={formatCurrency(saldoSemDestinacao)}>
                   {formatCurrency(saldoSemDestinacao)}
