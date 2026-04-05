@@ -102,6 +102,7 @@ function App() {
   const [authForm, setAuthForm] = useState({ email: '', password: '' })
 
   const [activeMenu, setActiveMenu] = useState('operacional')
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('destinacao')
   const [activeCadastroTab, setActiveCadastroTab] = useState('empresas')
   const [csvUrl, setCsvUrl] = useState('')
@@ -117,6 +118,7 @@ function App() {
   const [selectedProcessIds, setSelectedProcessIds] = useState([])
   const [selectedProcessValues, setSelectedProcessValues] = useState({})
   const [filtroProcessoDestinacao, setFiltroProcessoDestinacao] = useState('')
+  const [filtroEmpresaGerencial, setFiltroEmpresaGerencial] = useState('')
 
   const [destForm, setDestForm] = useState({
     solicitacaoData: todayInputDate,
@@ -496,7 +498,48 @@ function App() {
       .sort((a, b) => a.empresa.localeCompare(b.empresa))
   }, [baseCsv, destinacoes])
 
+  const resumoEmpresasFiltradas = useMemo(() => {
+    const filtro = String(filtroEmpresaGerencial || '').trim()
+
+    if (!filtro) {
+      return resumoEmpresas
+    }
+
+    return resumoEmpresas.filter((item) => item.empresa === filtro)
+  }, [resumoEmpresas, filtroEmpresaGerencial])
+
+  const resumoFiltroGerencial = useMemo(
+    () =>
+      resumoEmpresasFiltradas.reduce(
+        (acc, item) => {
+          acc.totalFomento += Number(item.totalFomento || 0)
+          acc.totalDestinado += Number(item.totalDestinado || 0)
+          acc.totalPago += Number(item.totalPago || 0)
+          acc.saldoADestinar += Number(item.saldoADestinar || 0)
+          acc.saldoAPagar += Number(item.saldoAPagar || 0)
+          acc.processosComSaldo += Number(item.processosComSaldo || 0)
+          acc.processosTotal += Number(item.processosTotal || 0)
+          return acc
+        },
+        {
+          totalFomento: 0,
+          totalDestinado: 0,
+          totalPago: 0,
+          saldoADestinar: 0,
+          saldoAPagar: 0,
+          processosComSaldo: 0,
+          processosTotal: 0,
+        },
+      ),
+    [resumoEmpresasFiltradas],
+  )
+
   const categoriaTexto = categoriaDescriptions[entidadeForm.categoria] || ''
+
+  function handleSelectMobileMenu(nextMenu) {
+    setActiveMenu(nextMenu)
+    setIsMobileMenuOpen(false)
+  }
 
   function handleIniciarDestinacaoPorEmpresa(empresa) {
     const normalizedEmpresa = String(empresa || '').trim()
@@ -1089,15 +1132,15 @@ function App() {
           </div>
         </aside>
 
-        <section className="flex-1 space-y-6">
+        <section className="min-w-0 flex-1 space-y-6">
           <section className="panel panel-hero">
             <div className="flex flex-wrap items-end justify-between gap-5">
               <div>
                 <p className="text-xs uppercase tracking-[0.22em] text-cyan-700">Gestão de fomentos sociais</p>
-                <h1 className="headline mt-3 text-3xl font-semibold tracking-tight text-zinc-900 sm:text-4xl">
+                <h1 className="headline mt-3 break-words text-3xl font-semibold tracking-tight text-zinc-900 sm:text-4xl">
                   Controle de Destinação de Fomentos Sociais
                 </h1>
-                <p className="mt-3 max-w-2xl text-sm text-zinc-600 sm:text-base">
+                <p className="mt-3 max-w-2xl break-words text-sm text-zinc-600 sm:text-base">
                   Use o menu para alternar entre a operação diária e as configurações do sistema.
                 </p>
               </div>
@@ -1550,26 +1593,114 @@ function App() {
                     Visão consolidada para acompanhamento de saldo a destinar e saldo a pagar por empresa.
                   </p>
 
+                  <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
+                    <div className="grid gap-3">
+                      <div className="space-y-1 min-w-0">
+                        <label className="field-label" htmlFor="filtroEmpresaGerencial">
+                          Filtro rápido por empresa
+                        </label>
+                        <select
+                          id="filtroEmpresaGerencial"
+                          className="input-field w-full max-w-full text-xs sm:text-sm"
+                          value={filtroEmpresaGerencial}
+                          onChange={(event) => setFiltroEmpresaGerencial(event.target.value)}
+                        >
+                          <option value="">Todas as empresas</option>
+                          {resumoEmpresas.map((item) => (
+                            <option key={item.empresa} value={item.empresa}>
+                              {item.empresa}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <p className="text-xs text-zinc-500">
+                        Exibindo {resumoEmpresasFiltradas.length} de {resumoEmpresas.length} empresas
+                      </p>
+
+                      {filtroEmpresaGerencial && (
+                        <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-zinc-600 break-words">
+                          Empresa selecionada: <strong className="text-zinc-800">{filtroEmpresaGerencial}</strong>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <article className="card-metric">
-                      <p>Empresas no painel</p>
-                      <strong>{resumoEmpresas.length}</strong>
+                      <p>Empresas visíveis</p>
+                      <strong>{resumoEmpresasFiltradas.length}</strong>
                     </article>
                     <article className="card-metric">
-                      <p>Fomento total</p>
-                      <strong title={formatCurrency(totalEmFomentos)}>{formatCurrencyCompact(totalEmFomentos)}</strong>
+                      <p>Fomento do filtro</p>
+                      <strong title={formatCurrency(resumoFiltroGerencial.totalFomento)}>
+                        {formatCurrencyCompact(resumoFiltroGerencial.totalFomento)}
+                      </strong>
                     </article>
                     <article className="card-metric">
-                      <p>Saldo total a destinar</p>
-                      <strong title={formatCurrency(saldoSemDestinacao)}>{formatCurrencyCompact(saldoSemDestinacao)}</strong>
+                      <p>Saldo a destinar (filtro)</p>
+                      <strong title={formatCurrency(resumoFiltroGerencial.saldoADestinar)}>
+                        {formatCurrencyCompact(resumoFiltroGerencial.saldoADestinar)}
+                      </strong>
                     </article>
                     <article className="card-metric">
-                      <p>Saldo total a pagar</p>
-                      <strong title={formatCurrency(saldoAPagar)}>{formatCurrencyCompact(saldoAPagar)}</strong>
+                      <p>Saldo a pagar (filtro)</p>
+                      <strong title={formatCurrency(resumoFiltroGerencial.saldoAPagar)}>
+                        {formatCurrencyCompact(resumoFiltroGerencial.saldoAPagar)}
+                      </strong>
                     </article>
                   </div>
 
-                  <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white/80">
+                  <div className="space-y-3 md:hidden">
+                    {resumoEmpresasFiltradas.length === 0 && (
+                      <article className="rounded-2xl border border-slate-200 bg-white/85 p-4 text-sm text-zinc-500">
+                        Sem dados para exibição.
+                      </article>
+                    )}
+
+                    {resumoEmpresasFiltradas.map((item) => (
+                      <article key={item.empresa} className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <button
+                            type="button"
+                            className="block w-full text-left text-base font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline whitespace-normal break-words leading-snug"
+                            onClick={() => handleIniciarDestinacaoPorEmpresa(item.empresa)}
+                            title="Abrir nova destinação para esta empresa"
+                          >
+                            {item.empresa}
+                          </button>
+                          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-zinc-600">
+                            {item.processosComSaldo}/{item.processosTotal} processos
+                          </span>
+                        </div>
+
+                        <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
+                          <div className="rounded-xl bg-slate-50 p-2">
+                            <dt className="text-xs text-zinc-500">Fomento</dt>
+                            <dd className="font-semibold text-zinc-900">{formatCurrency(item.totalFomento)}</dd>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-2">
+                            <dt className="text-xs text-zinc-500">Destinado</dt>
+                            <dd className="font-semibold text-zinc-900">{formatCurrency(item.totalDestinado)}</dd>
+                          </div>
+                          <div className="rounded-xl bg-slate-50 p-2">
+                            <dt className="text-xs text-zinc-500">Pago</dt>
+                            <dd className="font-semibold text-zinc-900">{formatCurrency(item.totalPago)}</dd>
+                          </div>
+                          <div className="rounded-xl bg-emerald-50 p-2">
+                            <dt className="text-xs text-emerald-700">Saldo a destinar</dt>
+                            <dd className="font-semibold text-emerald-800">{formatCurrency(item.saldoADestinar)}</dd>
+                          </div>
+                          <div className="col-span-2 rounded-xl bg-amber-50 p-2">
+                            <dt className="text-xs text-amber-700">Saldo a pagar</dt>
+                            <dd className="font-semibold text-amber-800">{formatCurrency(item.saldoAPagar)}</dd>
+                          </div>
+                        </dl>
+                      </article>
+                    ))}
+                  </div>
+
+                  <div className="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white/80 md:block">
                     <table className="w-full border-collapse text-left text-sm">
                       <thead className="bg-slate-100/90 text-zinc-600">
                         <tr>
@@ -1583,7 +1714,7 @@ function App() {
                         </tr>
                       </thead>
                       <tbody>
-                        {resumoEmpresas.length === 0 && (
+                        {resumoEmpresasFiltradas.length === 0 && (
                           <tr>
                             <td colSpan="7" className="px-4 py-4 text-zinc-500">
                               Sem dados para exibição.
@@ -1591,12 +1722,12 @@ function App() {
                           </tr>
                         )}
 
-                        {resumoEmpresas.map((item) => (
+                        {resumoEmpresasFiltradas.map((item) => (
                           <tr key={item.empresa} className="border-t border-slate-100/80 even:bg-slate-50/70">
-                            <td className="px-4 py-3 font-medium text-zinc-900">
+                            <td className="px-4 py-3 font-medium text-zinc-900 max-w-[320px]">
                               <button
                                 type="button"
-                                className="w-full text-left font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline"
+                                className="w-full text-left font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline whitespace-normal break-words leading-snug"
                                 onClick={() => handleIniciarDestinacaoPorEmpresa(item.empresa)}
                                 title="Abrir nova destinação para esta empresa"
                               >
@@ -2044,27 +2175,53 @@ function App() {
         className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 p-3 backdrop-blur lg:hidden"
         aria-label="Menu mobile"
       >
-        <div className="mx-auto grid max-w-2xl grid-cols-3 gap-2">
+        <div className="mx-auto max-w-2xl">
+          {isMobileMenuOpen && (
+            <div id="mobile-menu-actions" className="mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
+              <div className="grid gap-2">
+                <button
+                  type="button"
+                  className={activeMenu === 'operacional' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
+                  onClick={() => handleSelectMobileMenu('operacional')}
+                >
+                  Operacional
+                </button>
+                <button
+                  type="button"
+                  className={activeMenu === 'cadastros' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
+                  onClick={() => handleSelectMobileMenu('cadastros')}
+                >
+                  Cadastros
+                </button>
+                <button
+                  type="button"
+                  className={activeMenu === 'configuracoes' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
+                  onClick={() => handleSelectMobileMenu('configuracoes')}
+                >
+                  Configurações
+                </button>
+                <button
+                  type="button"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-left text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false)
+                    handleLogout()
+                  }}
+                >
+                  Encerrar Sessão
+                </button>
+              </div>
+            </div>
+          )}
+
           <button
             type="button"
-            className={activeMenu === 'operacional' ? 'tab tab-active w-full' : 'tab w-full'}
-            onClick={() => setActiveMenu('operacional')}
+            className="tab w-full"
+            onClick={() => setIsMobileMenuOpen((current) => !current)}
+            aria-expanded={isMobileMenuOpen}
+            aria-controls="mobile-menu-actions"
           >
-            Operacional
-          </button>
-          <button
-            type="button"
-            className={activeMenu === 'cadastros' ? 'tab tab-active w-full' : 'tab w-full'}
-            onClick={() => setActiveMenu('cadastros')}
-          >
-            Cadastros
-          </button>
-          <button
-            type="button"
-            className={activeMenu === 'configuracoes' ? 'tab tab-active w-full' : 'tab w-full'}
-            onClick={() => setActiveMenu('configuracoes')}
-          >
-            Configurações
+            Menu
           </button>
         </div>
       </nav>
