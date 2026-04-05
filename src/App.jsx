@@ -47,6 +47,8 @@ const cadastroTabs = [
   { id: 'usuarios', label: 'Cadastro de usuários' },
 ]
 
+const FONT_SIZE_STORAGE_KEY = 'app-fomentos-font-size'
+
 function getValorFomentoFromProcess(item) {
   const premio = Number(item?.valorPremio || 0)
   const incentivo = Number(item?.incentivo || 0)
@@ -147,6 +149,13 @@ function App() {
     password: '',
     role: 'OPERADOR',
   })
+  const [isLargeFontEnabled, setIsLargeFontEnabled] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false
+    }
+
+    return window.localStorage.getItem(FONT_SIZE_STORAGE_KEY) === 'large'
+  })
 
   const isAdmin = userProfile?.role === 'admin' && userProfile?.blocked !== true
   const canAccessCadastroBase = Boolean(user && userProfile && userProfile?.blocked !== true)
@@ -177,6 +186,12 @@ function App() {
 
     return () => unsub()
   }, [])
+
+  useEffect(() => {
+    const root = document.documentElement
+    root.setAttribute('data-font-size', isLargeFontEnabled ? 'large' : 'default')
+    window.localStorage.setItem(FONT_SIZE_STORAGE_KEY, isLargeFontEnabled ? 'large' : 'default')
+  }, [isLargeFontEnabled])
 
   useEffect(() => {
     if (!user) {
@@ -886,6 +901,10 @@ function App() {
     }
   }
 
+  function handleToggleFontSize() {
+    setIsLargeFontEnabled((current) => !current)
+  }
+
   async function handleUpdateRole(targetUserId, nextRole) {
     if (!user || !isAdmin) {
       toast.error('Apenas administradores podem alterar perfis.')
@@ -1001,7 +1020,7 @@ function App() {
 
         <main className="relative z-10 mx-auto max-w-lg">
           <section className="panel panel-hero">
-            <p className="text-xs uppercase tracking-[0.22em] text-cyan-700">Acesso protegido</p>
+            <p className="text-sm uppercase tracking-[0.2em] text-cyan-700">Acesso protegido</p>
             <h1 className="headline mt-3 text-3xl font-semibold tracking-tight text-zinc-900">
               Entrar no sistema de fomentos
             </h1>
@@ -1086,7 +1105,7 @@ function App() {
         <aside className="hidden w-72 shrink-0 lg:sticky lg:top-6 lg:block">
           <div className="panel panel-soft space-y-5">
             <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-cyan-700">Navegação</p>
+              <p className="text-sm uppercase tracking-[0.2em] text-cyan-700">Navegação</p>
               <h2 className="mt-2 text-2xl font-semibold text-zinc-900">Menu principal</h2>
             </div>
 
@@ -1115,12 +1134,26 @@ function App() {
             </nav>
 
             <div className="rounded-2xl border border-cyan-200 bg-cyan-50/80 px-4 py-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-cyan-700">Operação ativa</p>
+              <p className="text-sm uppercase tracking-[0.14em] text-cyan-700">Operação ativa</p>
               <p className="mt-1 break-all text-sm font-semibold text-cyan-900">{user.email || user.uid}</p>
-              <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-700">
+              <p className="mt-1 text-sm font-semibold uppercase tracking-[0.14em] text-cyan-700">
                 Perfil: {isAdmin ? 'ADMIN' : 'OPERADOR'}
               </p>
             </div>
+
+            <button
+              type="button"
+              className={
+                isLargeFontEnabled
+                  ? 'w-full rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-left text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100'
+                  : 'w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-left text-sm font-semibold text-zinc-700 transition hover:bg-slate-50'
+              }
+              onClick={handleToggleFontSize}
+              aria-pressed={isLargeFontEnabled}
+              title="Alternar modo de fonte grande"
+            >
+              {isLargeFontEnabled ? 'Fonte grande: ligada' : 'Fonte grande: desligada'}
+            </button>
 
             <button
               type="button"
@@ -1136,7 +1169,7 @@ function App() {
           <section className="panel panel-hero">
             <div className="flex flex-wrap items-end justify-between gap-5">
               <div>
-                <p className="text-xs uppercase tracking-[0.22em] text-cyan-700">Gestão de fomentos sociais</p>
+                <p className="text-sm uppercase tracking-[0.2em] text-cyan-700">Gestão de fomentos sociais</p>
                 <h1 className="headline mt-3 break-words text-3xl font-semibold tracking-tight text-zinc-900 sm:text-4xl">
                   Controle de Destinação de Fomentos Sociais
                 </h1>
@@ -1144,17 +1177,9 @@ function App() {
                   Use o menu para alternar entre a operação diária e as configurações do sistema.
                 </p>
               </div>
-
-              <div className="rounded-2xl border border-cyan-200 bg-cyan-50/80 px-4 py-3 text-right lg:hidden">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-cyan-700">Operação ativa</p>
-                <p className="mt-1 break-all text-sm font-semibold text-cyan-900">{user.email || user.uid}</p>
-                <p className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-700">
-                  Perfil: {isAdmin ? 'ADMIN' : 'OPERADOR'}
-                </p>
-              </div>
             </div>
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-5">
               <article className="card-metric">
                 <p>Total em fomentos</p>
                 <strong title={formatCurrency(totalEmFomentos)}>
@@ -1177,10 +1202,10 @@ function App() {
                 <p>Saldo a pagar</p>
                 <strong title={formatCurrency(saldoAPagar)}>{formatCurrencyCompact(saldoAPagar)}</strong>
               </article>
-              <article className="card-metric">
+              <article className="card-metric col-span-2 sm:col-span-2">
                 <p>Saldo sem destinação</p>
                 <strong title={formatCurrency(saldoSemDestinacao)}>
-                  {formatCurrencyCompact(saldoSemDestinacao)}
+                  {formatCurrency(saldoSemDestinacao)}
                 </strong>
               </article>
             </div>
@@ -1255,7 +1280,7 @@ function App() {
                       {processosEmpresaFiltrados.length > 0 && (
                         <button
                           type="button"
-                          className="text-xs font-semibold text-cyan-700 hover:underline"
+                          className="text-sm font-semibold text-cyan-700 hover:underline"
                           onClick={() =>
                             {
                               const processIds = processosEmpresaFiltrados.map((item) => item.processoId)
@@ -1334,7 +1359,7 @@ function App() {
                                   </span>
                                   {checked && (
                                     <span className="mt-2 block">
-                                      <span className="mb-1 block text-xs font-medium text-zinc-600">
+                                      <span className="mb-1 block text-sm font-medium text-zinc-600">
                                         Valor destinado para este processo
                                       </span>
                                       <NumericFormat
@@ -1402,7 +1427,7 @@ function App() {
                         </label>
                         <button
                           type="button"
-                          className="text-xs font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline"
+                          className="text-sm font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline"
                           onClick={() => {
                             setEntidadeForm({ nome: '', categoria: 'Assistencia' })
                             setIsEntidadeModalOpen(true)
@@ -1601,7 +1626,7 @@ function App() {
                         </label>
                         <select
                           id="filtroEmpresaGerencial"
-                          className="input-field w-full max-w-full text-xs sm:text-sm"
+                          className="field-input w-full max-w-full"
                           value={filtroEmpresaGerencial}
                           onChange={(event) => setFiltroEmpresaGerencial(event.target.value)}
                         >
@@ -1614,12 +1639,12 @@ function App() {
                         </select>
                       </div>
 
-                      <p className="text-xs text-zinc-500">
+                      <p className="text-sm text-zinc-500">
                         Exibindo {resumoEmpresasFiltradas.length} de {resumoEmpresas.length} empresas
                       </p>
 
                       {filtroEmpresaGerencial && (
-                        <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-zinc-600 break-words">
+                        <p className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-zinc-600 break-words">
                           Empresa selecionada: <strong className="text-zinc-800">{filtroEmpresaGerencial}</strong>
                         </p>
                       )}
@@ -1669,30 +1694,30 @@ function App() {
                           >
                             {item.empresa}
                           </button>
-                          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-zinc-600">
+                          <span className="rounded-full bg-slate-100 px-2 py-1 text-sm font-medium text-zinc-600">
                             {item.processosComSaldo}/{item.processosTotal} processos
                           </span>
                         </div>
 
                         <dl className="mt-4 grid grid-cols-2 gap-2 text-sm">
                           <div className="rounded-xl bg-slate-50 p-2">
-                            <dt className="text-xs text-zinc-500">Fomento</dt>
+                            <dt className="text-sm text-zinc-500">Fomento</dt>
                             <dd className="font-semibold text-zinc-900">{formatCurrency(item.totalFomento)}</dd>
                           </div>
                           <div className="rounded-xl bg-slate-50 p-2">
-                            <dt className="text-xs text-zinc-500">Destinado</dt>
+                            <dt className="text-sm text-zinc-500">Destinado</dt>
                             <dd className="font-semibold text-zinc-900">{formatCurrency(item.totalDestinado)}</dd>
                           </div>
                           <div className="rounded-xl bg-slate-50 p-2">
-                            <dt className="text-xs text-zinc-500">Pago</dt>
+                            <dt className="text-sm text-zinc-500">Pago</dt>
                             <dd className="font-semibold text-zinc-900">{formatCurrency(item.totalPago)}</dd>
                           </div>
                           <div className="rounded-xl bg-emerald-50 p-2">
-                            <dt className="text-xs text-emerald-700">Saldo a destinar</dt>
+                            <dt className="text-sm text-emerald-700">Saldo a destinar</dt>
                             <dd className="font-semibold text-emerald-800">{formatCurrency(item.saldoADestinar)}</dd>
                           </div>
                           <div className="col-span-2 rounded-xl bg-amber-50 p-2">
-                            <dt className="text-xs text-amber-700">Saldo a pagar</dt>
+                            <dt className="text-sm text-amber-700">Saldo a pagar</dt>
                             <dd className="font-semibold text-amber-800">{formatCurrency(item.saldoAPagar)}</dd>
                           </div>
                         </dl>
@@ -1970,13 +1995,13 @@ function App() {
                           return (
                             <tr key={entry.uid} className="border-t border-slate-100/80 even:bg-slate-50/70">
                               <td className="px-4 py-3 font-medium text-zinc-900">{entry.email || '--'}</td>
-                              <td className="px-4 py-3 text-xs text-zinc-500">{entry.uid}</td>
+                              <td className="px-4 py-3 text-sm text-zinc-500">{entry.uid}</td>
                               <td className="px-4 py-3">
                                 <span
                                   className={
                                     entry.role === 'admin'
-                                      ? 'rounded-full bg-cyan-100 px-2 py-1 text-xs font-semibold text-cyan-800'
-                                      : 'rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800'
+                                      ? 'rounded-full bg-cyan-100 px-2 py-1 text-sm font-semibold text-cyan-800'
+                                      : 'rounded-full bg-amber-100 px-2 py-1 text-sm font-semibold text-amber-800'
                                   }
                                 >
                                   {(entry.role || 'OPERADOR').toUpperCase()}
@@ -1986,8 +2011,8 @@ function App() {
                                 <span
                                   className={
                                     isBlocked
-                                      ? 'rounded-full bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-800'
-                                      : 'rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800'
+                                      ? 'rounded-full bg-rose-100 px-2 py-1 text-sm font-semibold text-rose-800'
+                                      : 'rounded-full bg-emerald-100 px-2 py-1 text-sm font-semibold text-emerald-800'
                                   }
                                 >
                                   {isBlocked ? 'BLOQUEADO' : 'ATIVO'}
@@ -1997,7 +2022,7 @@ function App() {
                                 <div className="flex justify-end gap-2">
                                   <button
                                     type="button"
-                                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                                     onClick={() => handleUpdateRole(entry.uid, nextRole)}
                                     disabled={isSelf || isRoleBusy || isAccessBusy}
                                   >
@@ -2010,7 +2035,7 @@ function App() {
 
                                   <button
                                     type="button"
-                                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                                     onClick={() => handleToggleUserAccess(entry.uid, !isBlocked)}
                                     disabled={isSelf || isAccessBusy || isRoleBusy}
                                   >
@@ -2070,7 +2095,7 @@ function App() {
                 </button>
 
                 {!isAdmin && (
-                  <p className="mt-2 text-xs font-medium text-amber-700">
+                  <p className="mt-2 text-sm font-medium text-amber-700">
                     Somente usuários com perfil ADMIN podem alterar configurações.
                   </p>
                 )}
@@ -2098,7 +2123,7 @@ function App() {
               </div>
               <button
                 type="button"
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-zinc-700 transition hover:bg-slate-50"
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
                 onClick={() => setIsEntidadeModalOpen(false)}
               >
                 Fechar
@@ -2179,6 +2204,14 @@ function App() {
           {isMobileMenuOpen && (
             <div id="mobile-menu-actions" className="mb-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-lg">
               <div className="grid gap-2">
+                <div className="rounded-2xl border border-cyan-200 bg-cyan-50/80 px-4 py-3">
+                  <p className="text-sm uppercase tracking-[0.14em] text-cyan-700">Operação ativa</p>
+                  <p className="mt-1 break-all text-sm font-semibold text-cyan-900">{user.email || user.uid}</p>
+                  <p className="mt-1 text-sm font-semibold uppercase tracking-[0.14em] text-cyan-700">
+                    Perfil: {isAdmin ? 'ADMIN' : 'OPERADOR'}
+                  </p>
+                </div>
+
                 <button
                   type="button"
                   className={activeMenu === 'operacional' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
@@ -2200,6 +2233,20 @@ function App() {
                 >
                   Configurações
                 </button>
+                <button
+                  type="button"
+                  className={
+                    isLargeFontEnabled
+                      ? 'w-full rounded-xl border border-cyan-300 bg-cyan-50 px-4 py-2 text-left text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100'
+                      : 'w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-left text-sm font-semibold text-zinc-700 transition hover:bg-slate-50'
+                  }
+                  onClick={handleToggleFontSize}
+                  aria-pressed={isLargeFontEnabled}
+                  title="Alternar modo de fonte grande"
+                >
+                  {isLargeFontEnabled ? 'Fonte grande: ligada' : 'Fonte grande: desligada'}
+                </button>
+
                 <button
                   type="button"
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-left text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"

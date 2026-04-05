@@ -6,7 +6,11 @@
 
 @layer base {
   html {
-    font-size: 16px;
+    font-size: 17px;
+  }
+
+  html[data-font-size='large'] {
+    font-size: 19px;
   }
 
   body {
@@ -23,12 +27,23 @@
 
   @media (max-width: 640px) {
     html {
-      font-size: 18px;
+      font-size: 20px;
+    }
+
+    html[data-font-size='large'] {
+      font-size: 22px;
     }
 
     h1.headline {
       font-size: 30px !important;
       line-height: 1.15;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+      font-size: 16px;
     }
   }
 }
@@ -51,19 +66,19 @@
   }
 
   .field-label {
-    @apply mb-1 block text-xs font-semibold uppercase tracking-[0.12em] text-zinc-600;
+    @apply mb-1 block text-sm font-semibold uppercase tracking-[0.1em] text-zinc-600;
   }
 
   .field-input {
-    @apply w-full rounded-xl border border-slate-200 bg-white/95 px-3 py-2.5 text-sm text-zinc-800 outline-none transition duration-200 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100;
+    @apply w-full rounded-xl border border-slate-200 bg-white/95 px-3 py-3 text-base text-zinc-800 outline-none transition duration-200 focus:border-cyan-500 focus:ring-4 focus:ring-cyan-100;
   }
 
   .btn-primary {
-    @apply rounded-xl bg-gradient-to-r from-zinc-900 to-zinc-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition duration-200 hover:translate-y-[-1px] hover:from-zinc-800 hover:to-zinc-600 disabled:cursor-not-allowed disabled:from-zinc-400 disabled:to-zinc-400;
+    @apply rounded-xl bg-gradient-to-r from-zinc-900 to-zinc-700 px-4 py-3 text-base font-semibold text-white shadow-sm transition duration-200 hover:translate-y-[-1px] hover:from-zinc-800 hover:to-zinc-600 disabled:cursor-not-allowed disabled:from-zinc-400 disabled:to-zinc-400;
   }
 
   .tab {
-    @apply rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-zinc-600 transition duration-200 hover:border-slate-300 hover:text-zinc-900;
+    @apply rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-base font-medium text-zinc-600 transition duration-200 hover:border-slate-300 hover:text-zinc-900;
   }
 
   .tab-active {
@@ -75,7 +90,7 @@
   }
 
   .card-metric p {
-    @apply text-xs uppercase tracking-[0.12em] text-zinc-500;
+    @apply text-sm uppercase tracking-[0.1em] text-zinc-500;
   }
 
   .card-metric strong {
