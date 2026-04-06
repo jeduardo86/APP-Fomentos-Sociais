@@ -3015,7 +3015,7 @@ function App() {
                   Controle de Destinação de Fomentos Sociais
                 </h1>
                 <p className="mt-3 max-w-2xl break-words text-sm text-zinc-600 sm:text-base">
-                  Use o menu para alternar entre operação diária, cadastros, relatórios e configurações do sistema.
+                  Use o menu para alternar entre Destinações, Cadastros, Relatórios e Configurações do Sistema.
                 </p>
               </div>
             </div>
