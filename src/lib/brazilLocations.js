@@ -43,7 +43,7 @@ const CAPITAL_BY_STATE = {
   MS: 'Campo Grande',
   MG: 'Belo Horizonte',
   PA: 'Belem',
-  PB: 'Joao Pessoa',
+  PB: 'JOAO PESSOA',
   PR: 'Curitiba',
   PE: 'Recife',
   PI: 'Teresina',
