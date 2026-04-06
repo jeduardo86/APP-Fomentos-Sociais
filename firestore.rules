@@ -114,7 +114,7 @@ service cloud.firestore {
     match /entidades/{document=**} {
       allow read: if isAccessEnabled();
       allow create: if isAccessEnabled() && validCreateOwnership();
-      allow update: if isAccessEnabled() && validUpdateOwnership();
+      allow update: if isAccessEnabled() && (validUpdateOwnership() || isAdmin());
       allow delete: if false;
     }
 
