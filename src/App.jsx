@@ -649,13 +649,36 @@ function App() {
     return 'parcial'
   }, [destinacoesRelatorio, totalPagoRelatorio, saldoPagamentoRelatorio])
 
-  const entidadesRelatorio = useMemo(
-    () =>
-      Array.from(
-        new Set(destinacoesRelatorio.map((item) => String(item.entidadeNome || '').trim()).filter(Boolean)),
-      ).sort((a, b) => a.localeCompare(b)),
-    [destinacoesRelatorio],
-  )
+  const entidadesRelatorio = useMemo(() => {
+    const entidadesByIdRelatorio = new Map(
+      entidades.map((entry) => [String(entry.id || '').trim(), entry]),
+    )
+
+    const entidadesUnicas = new Map()
+
+    destinacoesRelatorio.forEach((item) => {
+      const entidadeId = String(item.entidadeId || '').trim()
+      const entidadeCadastro = entidadesByIdRelatorio.get(entidadeId)
+      const nomeEntidade = String(item.entidadeNome || entidadeCadastro?.nome || '').trim()
+      const cnpjDigits = sanitizeCNPJ(entidadeCadastro?.cnpj || '')
+      const cnpjEntidade = cnpjDigits.length === 14 ? maskCNPJ(cnpjDigits) : ''
+
+      if (!nomeEntidade && !cnpjEntidade) {
+        return
+      }
+
+      const key = `${nomeEntidade.toLowerCase()}|${cnpjEntidade}`
+
+      if (!entidadesUnicas.has(key)) {
+        entidadesUnicas.set(key, {
+          nome: nomeEntidade || 'Entidade não identificada',
+          cnpj: cnpjEntidade,
+        })
+      }
+    })
+
+    return Array.from(entidadesUnicas.values()).sort((a, b) => a.nome.localeCompare(b.nome))
+  }, [destinacoesRelatorio, entidades])
 
   const areasDestinacaoRelatorio = useMemo(() => {
     const categoriaLabelByValue = new Map(categoriaOptions.map((item) => [item.value, item.label]))
@@ -5269,6 +5292,20 @@ function App() {
                                   fomentos, <strong>constata-se que houve destinação social de recursos</strong> para o
                                   referido processo, no montante total de{' '}
                                   <strong>{formatCurrency(totalDestinadoRelatorio)}</strong>.
+                                </p>
+
+                                <p>
+                                  As entidades recebedoras do fomento são:{' '}
+                                  <strong>
+                                    {entidadesRelatorio
+                                      .map((item) =>
+                                        item.cnpj
+                                          ? `${item.nome} (CNPJ ${item.cnpj})`
+                                          : `${item.nome} (CNPJ não informado)`,
+                                      )
+                                      .join('; ') || 'Entidade não identificada'}
+                                  </strong>
+                                  .
                                 </p>
 
                                 <p>
