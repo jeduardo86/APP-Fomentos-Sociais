@@ -70,7 +70,45 @@ function toSafeDocId(value) {
 
 function normalizeMoney(value) {
   const parsed = Number(value || 0)
-  return Number.isFinite(parsed) ? Number(parsed.toFixed(2)) : 0
+
+  if (!Number.isFinite(parsed)) {
+    return 0
+  }
+
+  return Math.round((parsed + Number.EPSILON) * 100) / 100
+}
+
+function toMoneyCents(value) {
+  const parsed = Number(value || 0)
+
+  if (!Number.isFinite(parsed)) {
+    return 0
+  }
+
+  return Math.round((parsed + Number.EPSILON) * 100)
+}
+
+function fromMoneyCents(cents) {
+  const parsed = Number(cents || 0)
+
+  if (!Number.isFinite(parsed)) {
+    return 0
+  }
+
+  return normalizeMoney(parsed / 100)
+}
+
+function getLimiteProcessoCents(source) {
+  const premio = Number(source?.valorPremio || 0)
+  const incentivo = Number(source?.incentivo || 0)
+
+  if (Number.isFinite(premio) && Number.isFinite(incentivo) && (premio > 0 || incentivo > 0)) {
+    const incentivoBase = Math.max(0, incentivo - premio * 0.15)
+    const baseCalculo = premio + incentivoBase
+    return toMoneyCents(baseCalculo * 0.075)
+  }
+
+  return toMoneyCents(source?.valorFomento)
 }
 
 function shouldRetryProfileLoad(error) {
@@ -106,13 +144,14 @@ export async function syncBaseCsv(records, userId) {
 
 export async function createDestinacao(payload) {
   const processoId = String(payload?.processoId || '').trim()
-  const valorDestinado = normalizeMoney(payload?.valorDestinado)
+  const valorDestinadoCents = toMoneyCents(payload?.valorDestinado)
+  const valorDestinado = fromMoneyCents(valorDestinadoCents)
 
   if (!processoId) {
     throw new Error('Processo inválido para destinação.')
   }
 
-  if (valorDestinado <= 0) {
+  if (valorDestinadoCents <= 0) {
     throw new Error('Valor destinado deve ser maior que zero.')
   }
 
@@ -121,23 +160,28 @@ export async function createDestinacao(payload) {
   const baseRef = doc(db, 'base_csv', toSafeDocId(processoId))
   const baseSnapshot = await getDoc(baseRef)
 
-  const limiteProcesso = normalizeMoney(
-    baseSnapshot.exists() ? baseSnapshot.data()?.valorFomento : payload?.valorFomento,
-  )
+  const limiteProcessoCents = baseSnapshot.exists()
+    ? getLimiteProcessoCents(baseSnapshot.data())
+    : getLimiteProcessoCents(payload)
+  const limiteProcesso = fromMoneyCents(limiteProcessoCents)
 
-  if (limiteProcesso <= 0) {
+  if (limiteProcessoCents <= 0) {
     throw new Error('Não foi possível determinar o limite de fomento para este processo.')
   }
 
   const existentesQuery = query(collections.destinacoes, where('processoId', '==', processoId))
   const existentesSnapshot = await getDocs(existentesQuery)
 
-  const totalJaDestinado = normalizeMoney(
-    existentesSnapshot.docs.reduce((acc, entry) => acc + Number(entry.data().valorDestinado || 0), 0),
+  const totalJaDestinadoCents = existentesSnapshot.docs.reduce(
+    (acc, entry) => acc + toMoneyCents(entry.data().valorDestinado),
+    0,
   )
 
-  if (totalJaDestinado + valorDestinado > limiteProcesso) {
-    throw new Error('Saldo insuficiente para este processo no momento da gravação.')
+  if (totalJaDestinadoCents + valorDestinadoCents > limiteProcessoCents) {
+    const disponivelCents = Math.max(0, limiteProcessoCents - totalJaDestinadoCents)
+    throw new Error(
+      `Saldo insuficiente para este processo no momento da gravação. Limite: ${fromMoneyCents(limiteProcessoCents).toFixed(2)} | já destinado: ${fromMoneyCents(totalJaDestinadoCents).toFixed(2)} | disponível: ${fromMoneyCents(disponivelCents).toFixed(2)} | solicitado: ${fromMoneyCents(valorDestinadoCents).toFixed(2)}.`,
+    )
   }
 
   return addDoc(collections.destinacoes, {
@@ -150,7 +194,8 @@ export async function createDestinacao(payload) {
 }
 
 export async function registerDestinacaoPayment(destinacaoId, pgtoData, formaPgto, valorPago, userId) {
-  const pagamento = normalizeMoney(valorPago)
+  const pagamentoCents = toMoneyCents(valorPago)
+  const pagamento = fromMoneyCents(pagamentoCents)
 
   if (!destinacaoId) {
     throw new Error('Destinação inválida para pagamento.')
@@ -160,7 +205,7 @@ export async function registerDestinacaoPayment(destinacaoId, pgtoData, formaPgt
     throw new Error('Informe data e forma de pagamento.')
   }
 
-  if (pagamento <= 0) {
+  if (pagamentoCents <= 0) {
     throw new Error('O valor pago deve ser maior que zero.')
   }
 
@@ -175,21 +220,25 @@ export async function registerDestinacaoPayment(destinacaoId, pgtoData, formaPgt
     }
 
     const data = snapshot.data()
-    const valorDestinado = normalizeMoney(data?.valorDestinado)
-    const valorPagoAcumuladoAtual = normalizeMoney(data?.valorPagoAcumulado)
+    const valorDestinadoCents = toMoneyCents(data?.valorDestinado)
+    const valorPagoAcumuladoAtualCents = toMoneyCents(data?.valorPagoAcumulado)
+    const valorDestinado = fromMoneyCents(valorDestinadoCents)
+    const valorPagoAcumuladoAtual = fromMoneyCents(valorPagoAcumuladoAtualCents)
 
-    if (valorDestinado <= 0) {
+    if (valorDestinadoCents <= 0) {
       throw new Error('Destinação com valor inválido para pagamento.')
     }
 
-    const saldoRestante = normalizeMoney(valorDestinado - valorPagoAcumuladoAtual)
+    const saldoRestanteCents = Math.max(0, valorDestinadoCents - valorPagoAcumuladoAtualCents)
+    const saldoRestante = fromMoneyCents(saldoRestanteCents)
 
-    if (pagamento > saldoRestante) {
+    if (pagamentoCents > saldoRestanteCents) {
       throw new Error('Valor pago excede o saldo restante da destinação.')
     }
 
-    const novoPagoAcumulado = normalizeMoney(valorPagoAcumuladoAtual + pagamento)
-    const quitado = novoPagoAcumulado >= valorDestinado
+    const novoPagoAcumuladoCents = valorPagoAcumuladoAtualCents + pagamentoCents
+    const novoPagoAcumulado = fromMoneyCents(novoPagoAcumuladoCents)
+    const quitado = novoPagoAcumuladoCents >= valorDestinadoCents
 
     transaction.update(ref, {
       statusPagamento: quitado ? 'pago' : 'parcial',
@@ -204,7 +253,7 @@ export async function registerDestinacaoPayment(destinacaoId, pgtoData, formaPgt
     return {
       valorDestinado,
       valorPagoAcumulado: novoPagoAcumulado,
-      saldoRestante: normalizeMoney(valorDestinado - novoPagoAcumulado),
+      saldoRestante: fromMoneyCents(Math.max(0, valorDestinadoCents - novoPagoAcumuladoCents)),
       statusPagamento: quitado ? 'pago' : 'parcial',
     }
   })
@@ -226,7 +275,8 @@ export async function updateEntidade(entidadeId, payload) {
 export async function getTotalDestinadoByProcesso(processoId) {
   const q = query(collections.destinacoes, where('processoId', '==', processoId))
   const snapshot = await getDocs(q)
-  return snapshot.docs.reduce((acc, entry) => acc + Number(entry.data().valorDestinado || 0), 0)
+  const totalCents = snapshot.docs.reduce((acc, entry) => acc + toMoneyCents(entry.data().valorDestinado), 0)
+  return fromMoneyCents(totalCents)
 }
 
 export async function ensureUserProfile(user) {

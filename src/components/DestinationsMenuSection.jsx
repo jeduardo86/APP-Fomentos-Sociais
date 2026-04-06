@@ -199,7 +199,7 @@ export function DestinationsMenuSection({
                         />
                         <span>
                           <span className="font-semibold text-zinc-900">{item.processoId}</span>
-                          <span className="ml-2 text-zinc-500">{item.termo || 'Sem termo'}</span>
+                          <span className="ml-2 text-zinc-500">Termo de Autorização: {item.termo || 'Sem termo'}</span>
                           <span className="mt-1 block text-zinc-600">
                             Valor Premio: {formatCurrency(item.valorPremio || 0)} | Incentivo:{' '}
                             {formatCurrency(item.incentivo || 0)}

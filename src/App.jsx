@@ -11,7 +11,9 @@ import {
   sanitizeCNPJ,
   toCompetenciaMask,
 } from './lib/formatters'
+import { BRAZIL_STATES, fetchMunicipiosByEstado, sortMunicipiosByCapitalFirst } from './lib/brazilLocations'
 import { fetchAndParseCsv } from './services/csvService'
+import { fetchEntidadeByCnpj } from './services/cnpjService'
 import {
   createUserByAdmin,
   loginWithEmail,
@@ -173,6 +175,8 @@ function createInitialEntidadeForm() {
     nome: '',
     categoria: 'Assistencia',
     cnpj: '',
+    estado: '',
+    municipio: '',
     contato: '',
     responsavel: '',
     chavePix: '',
@@ -209,6 +213,8 @@ function App() {
   const [selectedProcessIds, setSelectedProcessIds] = useState([])
   const [selectedProcessValues, setSelectedProcessValues] = useState({})
   const [valorAlvoDestinacao, setValorAlvoDestinacao] = useState(0)
+  const [entidadeSearchDestinacao, setEntidadeSearchDestinacao] = useState('')
+  const [isEntidadeSearchOpen, setIsEntidadeSearchOpen] = useState(false)
   const [filtroProcessoDestinacao, setFiltroProcessoDestinacao] = useState('')
   const [filtroEmpresaGerencial, setFiltroEmpresaGerencial] = useState('')
 
@@ -236,6 +242,9 @@ function App() {
   const [editingEntidadeId, setEditingEntidadeId] = useState('')
   const [isEntidadeModalOpen, setIsEntidadeModalOpen] = useState(false)
   const [isSavingEntidadeModal, setIsSavingEntidadeModal] = useState(false)
+  const [municipiosByEstado, setMunicipiosByEstado] = useState({})
+  const [isLoadingMunicipiosByEstado, setIsLoadingMunicipiosByEstado] = useState(false)
+  const [isConsultandoCnpjEntidade, setIsConsultandoCnpjEntidade] = useState(false)
   const [usersList, setUsersList] = useState([])
   const [roleBusyUserId, setRoleBusyUserId] = useState('')
   const [accessBusyUserId, setAccessBusyUserId] = useState('')
@@ -263,6 +272,8 @@ function App() {
 
   const isAdmin = userProfile?.role === 'admin' && userProfile?.blocked !== true
   const reportContentRef = useRef(null)
+  const isLoadingMunicipiosRef = useRef(false)
+  const lastCnpjLookupRef = useRef('')
   const canAccessCadastroBase = Boolean(user && userProfile && userProfile?.blocked !== true)
   const visibleCadastroTabs = isAdmin
     ? cadastroTabs
@@ -790,6 +801,129 @@ function App() {
     })
   }, [processosEmpresa, filtroProcessoDestinacao])
 
+  const entidadesDestinacaoFiltradas = useMemo(() => {
+    const termo = String(entidadeSearchDestinacao || '').toLowerCase().trim()
+
+    if (!termo) {
+      return entidades
+    }
+
+    return entidades.filter((entry) => {
+      const nome = String(entry?.nome || '').toLowerCase()
+      const cnpj = String(entry?.cnpj || '').toLowerCase()
+      const categoria = String(entry?.categoria || '').toLowerCase()
+      const estado = String(entry?.estado || '').toLowerCase()
+      const municipio = String(entry?.municipio || '').toLowerCase()
+
+      return (
+        nome.includes(termo) ||
+        cnpj.includes(termo) ||
+        categoria.includes(termo) ||
+        estado.includes(termo) ||
+        municipio.includes(termo)
+      )
+    })
+  }, [entidades, entidadeSearchDestinacao])
+
+  const municipiosDisponiveis = useMemo(() => {
+    const estadoSelecionado = String(entidadeForm.estado || '').trim().toUpperCase()
+
+    if (!estadoSelecionado) {
+      return []
+    }
+
+    const municipiosEstado = municipiosByEstado[estadoSelecionado] || []
+    return sortMunicipiosByCapitalFirst(municipiosEstado, estadoSelecionado)
+  }, [entidadeForm.estado, municipiosByEstado])
+
+  const municipiosDisponiveisComSelecionado = useMemo(() => {
+    const municipioSelecionado = String(entidadeForm.municipio || '').trim()
+
+    if (!municipioSelecionado || municipiosDisponiveis.includes(municipioSelecionado)) {
+      return municipiosDisponiveis
+    }
+
+    return [municipioSelecionado, ...municipiosDisponiveis]
+  }, [entidadeForm.municipio, municipiosDisponiveis])
+
+  useEffect(() => {
+    const estadoSelecionado = String(entidadeForm.estado || '').trim().toUpperCase()
+
+    if (!estadoSelecionado) {
+      if (entidadeForm.municipio) {
+        setEntidadeForm((current) => ({ ...current, municipio: '' }))
+      }
+      return
+    }
+  }, [entidadeForm.estado, entidadeForm.municipio])
+
+  async function handleConsultarDadosCnpjEntidade(rawCnpjValue) {
+    const cnpjLimpo = sanitizeCNPJ(rawCnpjValue)
+
+    if (cnpjLimpo.length !== 14) {
+      return
+    }
+
+    if (isConsultandoCnpjEntidade || lastCnpjLookupRef.current === cnpjLimpo) {
+      return
+    }
+
+    setIsConsultandoCnpjEntidade(true)
+
+    try {
+      const cnpjData = await fetchEntidadeByCnpj(cnpjLimpo)
+
+      setEntidadeForm((current) => {
+        if (sanitizeCNPJ(current.cnpj) !== cnpjLimpo) {
+          return current
+        }
+
+        const nomeAtual = String(current.nome || '').trim()
+        const nomeSugerido = String(cnpjData.nome || '').trim()
+        const estadoSugerido = String(cnpjData.estado || '').trim().toUpperCase()
+        const municipioSugerido = String(cnpjData.municipio || '').trim()
+        const responsavelAtual = String(current.responsavel || '').trim()
+        const responsavelSugerido = String(cnpjData.responsavel || '').trim()
+        const contatoAtual = String(current.contato || '').trim()
+        const contatoSugerido = String(cnpjData.contato || '').trim()
+
+        return {
+          ...current,
+          nome: nomeAtual || nomeSugerido || current.nome,
+          estado: estadoSugerido || current.estado,
+          municipio: municipioSugerido || current.municipio,
+          responsavel: responsavelAtual || responsavelSugerido || current.responsavel,
+          contato: contatoAtual || contatoSugerido || current.contato,
+        }
+      })
+
+      lastCnpjLookupRef.current = cnpjLimpo
+      toast.success('Dados do CNPJ carregados automaticamente.')
+    } catch (error) {
+      toast.error(error?.message || 'Nao foi possivel consultar o CNPJ informado.')
+    } finally {
+      setIsConsultandoCnpjEntidade(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!destForm.entidadeId) {
+      return
+    }
+
+    const entidadeSelecionada = entidades.find((entry) => entry.id === destForm.entidadeId)
+
+    if (!entidadeSelecionada) {
+      return
+    }
+
+    const nomeEntidade = String(entidadeSelecionada.nome || '')
+
+    if (nomeEntidade !== entidadeSearchDestinacao) {
+      setEntidadeSearchDestinacao(nomeEntidade)
+    }
+  }, [destForm.entidadeId, entidades, entidadeSearchDestinacao])
+
   const totalEmFomentos = useMemo(
     () => baseCsv.reduce((acc, item) => acc + getValorFomentoFromProcess(item), 0),
     [baseCsv],
@@ -1106,6 +1240,26 @@ function App() {
     return () => window.removeEventListener('keydown', handleEscapeClose)
   }, [isEntidadeModalOpen])
 
+  useEffect(() => {
+    if (isLoadingMunicipiosRef.current) {
+      return
+    }
+
+    isLoadingMunicipiosRef.current = true
+    setIsLoadingMunicipiosByEstado(true)
+
+    fetchMunicipiosByEstado()
+      .then((groupedMunicipios) => {
+        setMunicipiosByEstado(groupedMunicipios)
+      })
+      .catch(() => {
+        toast.error('Nao foi possivel carregar a lista de municipios do Brasil.')
+      })
+      .finally(() => {
+        setIsLoadingMunicipiosByEstado(false)
+      })
+  }, [])
+
   async function handleSyncCsv(event) {
     event?.preventDefault?.()
 
@@ -1300,6 +1454,8 @@ function App() {
           String(entidade?.dadosBancarios || '').trim() || 'Não informados'
         const contatoEntidade = String(entidade?.contato || '').trim() || 'Não informado'
         const responsavelEntidade = String(entidade?.responsavel || '').trim() || 'Não informado'
+        const municipioEntidade = String(entidade?.municipio || '').trim() || 'Nao informado'
+        const estadoEntidade = String(entidade?.estado || '').trim() || 'Nao informado'
 
         const competenciaDocumento = String(destForm.competencia || '').trim() || '--/----'
         const solicitacaoDataDocumento = formatDateBR(destForm.solicitacaoData)
@@ -1323,6 +1479,8 @@ function App() {
           [
             `Entidade: ${nomeEntidade}`,
             `CNPJ: ${cnpjEntidade}`,
+            `Municipio: ${municipioEntidade}`,
+            `Estado: ${estadoEntidade}`,
             `Responsável: ${responsavelEntidade}`,
             `Contato: ${contatoEntidade}`,
             `Chave Pix: ${chavePixEntidade}`,
@@ -1379,6 +1537,8 @@ function App() {
         processoSolicitacaoEntidade: '',
         observacao: '',
       })
+      setEntidadeSearchDestinacao('')
+      setIsEntidadeSearchOpen(false)
       setSelectedProcessIds([])
       setSelectedProcessValues({})
       setValorAlvoDestinacao(0)
@@ -1548,6 +1708,8 @@ function App() {
       const contatoEntidade = String(entidadeRelacionada?.contato || '').trim() || 'Não informado'
       const responsavelEntidade =
         String(entidadeRelacionada?.responsavel || '').trim() || 'Não informado'
+      const municipioEntidade = String(entidadeRelacionada?.municipio || '').trim() || 'Nao informado'
+      const estadoEntidade = String(entidadeRelacionada?.estado || '').trim() || 'Nao informado'
 
       const competenciaDocumento = String(destinacaoItem.competencia || '').trim() || '--/----'
       const solicitacaoDataDocumento = formatDateBR(destinacaoItem.solicitacaoData)
@@ -1571,6 +1733,8 @@ function App() {
         [
           `Entidade: ${nomeEntidade}`,
           `CNPJ: ${cnpjEntidade}`,
+          `Municipio: ${municipioEntidade}`,
+          `Estado: ${estadoEntidade}`,
           `Responsável: ${responsavelEntidade}`,
           `Contato: ${contatoEntidade}`,
           `Chave Pix: ${chavePixEntidade}`,
@@ -1659,6 +1823,8 @@ function App() {
     const cnpjLimpo = sanitizeCNPJ(entidadeForm.cnpj)
     const chavePix = entidadeForm.chavePix.trim()
     const dadosBancarios = entidadeForm.dadosBancarios.trim()
+    const estado = String(entidadeForm.estado || '').trim().toUpperCase()
+    const municipio = String(entidadeForm.municipio || '').trim()
 
     if (!normalizedEntidadeNome || !entidadeForm.categoria) {
       toast.error('Informe nome e categoria da entidade.')
@@ -1667,6 +1833,11 @@ function App() {
 
     if (cnpjLimpo.length !== 14) {
       toast.error('Informe um CNPJ valido para a entidade.')
+      return
+    }
+
+    if (!estado || !municipio) {
+      toast.error('Informe o estado e municipio da entidade.')
       return
     }
 
@@ -1704,6 +1875,8 @@ function App() {
         nome: entidadeForm.nome.trim(),
         categoria: entidadeForm.categoria,
         cnpj: maskCNPJ(cnpjLimpo),
+        estado,
+        municipio,
         contato: entidadeForm.contato.trim(),
         responsavel: entidadeForm.responsavel.trim(),
         chavePix,
@@ -1756,6 +1929,8 @@ function App() {
       nome: String(entry?.nome || ''),
       categoria: String(entry?.categoria || 'Assistencia'),
       cnpj: maskCNPJ(entry?.cnpj || ''),
+      estado: String(entry?.estado || ''),
+      municipio: String(entry?.municipio || ''),
       contato: String(entry?.contato || ''),
       responsavel: String(entry?.responsavel || ''),
       chavePix: String(entry?.chavePix || ''),
@@ -2451,7 +2626,7 @@ function App() {
 
                     <div>
                       <div className="mb-1 flex items-center justify-between gap-2">
-                        <label className="field-label mb-0" htmlFor="entidadeId">
+                        <label className="field-label mb-0" htmlFor="entidadeBuscaDestinacao">
                           Entidade
                         </label>
                         <button
@@ -2466,6 +2641,54 @@ function App() {
                           Nova entidade
                         </button>
                       </div>
+                      <div className="relative">
+                        <input
+                          id="entidadeBuscaDestinacao"
+                          className="field-input"
+                          value={entidadeSearchDestinacao}
+                          onFocus={() => setIsEntidadeSearchOpen(true)}
+                          onBlur={() => {
+                            setTimeout(() => setIsEntidadeSearchOpen(false), 120)
+                          }}
+                          onChange={(event) => {
+                            const nextValue = event.target.value
+                            setEntidadeSearchDestinacao(nextValue)
+                            setIsEntidadeSearchOpen(true)
+                            setDestForm((current) => ({ ...current, entidadeId: '' }))
+                          }}
+                          placeholder="Digite para buscar por nome, CNPJ ou categoria"
+                          autoComplete="off"
+                        />
+
+                        {isEntidadeSearchOpen && (
+                          <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                            {entidadesDestinacaoFiltradas.length === 0 && (
+                              <p className="px-3 py-2 text-sm text-zinc-500">Nenhuma entidade encontrada.</p>
+                            )}
+
+                            {entidadesDestinacaoFiltradas.map((entry) => (
+                              <button
+                                key={entry.id}
+                                type="button"
+                                className="block w-full rounded-lg px-3 py-2 text-left text-sm text-zinc-700 transition hover:bg-slate-100"
+                                onMouseDown={(event) => {
+                                  event.preventDefault()
+                                  setDestForm((current) => ({ ...current, entidadeId: entry.id }))
+                                  setEntidadeSearchDestinacao(String(entry.nome || ''))
+                                  setIsEntidadeSearchOpen(false)
+                                }}
+                              >
+                                <span className="block font-medium text-zinc-900">{entry.nome}</span>
+                                <span className="block text-xs text-zinc-500">
+                                  {entry.cnpj || 'CNPJ não informado'} | {entry.categoria || 'Sem categoria'} |{' '}
+                                  {entry.municipio || 'Municipio nao informado'} - {entry.estado || '--'}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
                       <select
                         id="entidadeId"
                         className="field-input"
@@ -2473,6 +2696,9 @@ function App() {
                         onChange={(event) =>
                           setDestForm((current) => ({ ...current, entidadeId: event.target.value }))
                         }
+                        style={{ display: 'none' }}
+                        aria-hidden="true"
+                        tabIndex={-1}
                       >
                         <option value="">Selecione</option>
                         {entidades.map((entry) => (
@@ -2481,6 +2707,10 @@ function App() {
                           </option>
                         ))}
                       </select>
+
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Entidade selecionada: {destForm.entidadeId ? 'sim' : 'não'}
+                      </p>
                     </div>
 
                     <div>
@@ -3082,20 +3312,6 @@ function App() {
                         {editingEntidadeId ? 'Editar entidade' : 'Nova entidade'}
                       </h3>
                     <div>
-                      <label className="field-label" htmlFor="entidadeNome">
-                        Nome da entidade
-                      </label>
-                      <input
-                        id="entidadeNome"
-                        className="field-input"
-                        value={entidadeForm.nome}
-                        onChange={(event) =>
-                          setEntidadeForm((current) => ({ ...current, nome: event.target.value }))
-                        }
-                      />
-                    </div>
-
-                    <div>
                       <label className="field-label" htmlFor="entidadeCnpj">
                         CNPJ
                       </label>
@@ -3106,7 +3322,30 @@ function App() {
                         onChange={(event) =>
                           setEntidadeForm((current) => ({ ...current, cnpj: maskCNPJ(event.target.value) }))
                         }
+                        onBlur={(event) => {
+                          handleConsultarDadosCnpjEntidade(event.target.value)
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            event.currentTarget.blur()
+                          }
+                        }}
                         placeholder="00.000.000/0000-00"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="entidadeNome">
+                        Nome da entidade
+                      </label>
+                      <input
+                        id="entidadeNome"
+                        className="field-input"
+                        value={entidadeForm.nome}
+                        onChange={(event) =>
+                          setEntidadeForm((current) => ({ ...current, nome: event.target.value }))
+                        }
                       />
                     </div>
 
@@ -3155,6 +3394,59 @@ function App() {
                         {categoriaOptions.map((item) => (
                           <option key={item.value} value={item.value}>
                             {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="entidadeEstado">
+                        Estado
+                      </label>
+                      <select
+                        id="entidadeEstado"
+                        className="field-input"
+                        value={entidadeForm.estado}
+                        onChange={(event) =>
+                          setEntidadeForm((current) => ({
+                            ...current,
+                            estado: event.target.value,
+                            municipio: '',
+                          }))
+                        }
+                      >
+                        <option value="">Selecione</option>
+                        {BRAZIL_STATES.map((item) => (
+                          <option key={item.sigla} value={item.sigla}>
+                            {item.sigla} - {item.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="entidadeMunicipio">
+                        Municipio
+                      </label>
+                      <select
+                        id="entidadeMunicipio"
+                        className="field-input"
+                        value={entidadeForm.municipio}
+                        onChange={(event) =>
+                          setEntidadeForm((current) => ({ ...current, municipio: event.target.value }))
+                        }
+                        disabled={!entidadeForm.estado || isLoadingMunicipiosByEstado}
+                      >
+                        <option value="">
+                          {isLoadingMunicipiosByEstado
+                            ? 'Carregando municipios...'
+                            : entidadeForm.estado
+                              ? 'Selecione'
+                              : 'Selecione um estado primeiro'}
+                        </option>
+                        {municipiosDisponiveisComSelecionado.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
                           </option>
                         ))}
                       </select>
@@ -3253,6 +3545,14 @@ function App() {
                               <div>
                                 <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Contato</dt>
                                 <dd>{entry.contato || '--'}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Estado</dt>
+                                <dd>{entry.estado || '--'}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Municipio</dt>
+                                <dd>{entry.municipio || '--'}</dd>
                               </div>
                               <div>
                                 <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Chave Pix</dt>
@@ -3951,21 +4251,6 @@ function App() {
               }
             >
               <div>
-                <label className="field-label" htmlFor="modalEntidadeNome">
-                  Nome da entidade
-                </label>
-                <input
-                  id="modalEntidadeNome"
-                  className="field-input"
-                  value={entidadeForm.nome}
-                  onChange={(event) =>
-                    setEntidadeForm((current) => ({ ...current, nome: event.target.value }))
-                  }
-                  autoFocus
-                />
-              </div>
-
-              <div>
                 <label className="field-label" htmlFor="modalEntidadeCnpj">
                   CNPJ
                 </label>
@@ -3976,7 +4261,30 @@ function App() {
                   onChange={(event) =>
                     setEntidadeForm((current) => ({ ...current, cnpj: maskCNPJ(event.target.value) }))
                   }
+                  onBlur={(event) => {
+                    handleConsultarDadosCnpjEntidade(event.target.value)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      event.currentTarget.blur()
+                    }
+                  }}
                   placeholder="00.000.000/0000-00"
+                />
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="modalEntidadeNome">
+                  Nome da entidade
+                </label>
+                <input
+                  id="modalEntidadeNome"
+                  className="field-input"
+                  value={entidadeForm.nome}
+                  onChange={(event) =>
+                    setEntidadeForm((current) => ({ ...current, nome: event.target.value }))
+                  }
                 />
               </div>
 
@@ -4025,6 +4333,59 @@ function App() {
                   {categoriaOptions.map((item) => (
                     <option key={item.value} value={item.value}>
                       {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="modalEstadoEntidade">
+                  Estado
+                </label>
+                <select
+                  id="modalEstadoEntidade"
+                  className="field-input"
+                  value={entidadeForm.estado}
+                  onChange={(event) =>
+                    setEntidadeForm((current) => ({
+                      ...current,
+                      estado: event.target.value,
+                      municipio: '',
+                    }))
+                  }
+                >
+                  <option value="">Selecione</option>
+                  {BRAZIL_STATES.map((item) => (
+                    <option key={item.sigla} value={item.sigla}>
+                      {item.sigla} - {item.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="modalMunicipioEntidade">
+                  Municipio
+                </label>
+                <select
+                  id="modalMunicipioEntidade"
+                  className="field-input"
+                  value={entidadeForm.municipio}
+                  onChange={(event) =>
+                    setEntidadeForm((current) => ({ ...current, municipio: event.target.value }))
+                  }
+                  disabled={!entidadeForm.estado || isLoadingMunicipiosByEstado}
+                >
+                  <option value="">
+                    {isLoadingMunicipiosByEstado
+                      ? 'Carregando municipios...'
+                      : entidadeForm.estado
+                        ? 'Selecione'
+                        : 'Selecione um estado primeiro'}
+                  </option>
+                  {municipiosDisponiveisComSelecionado.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
                     </option>
                   ))}
                 </select>
