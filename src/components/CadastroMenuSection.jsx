@@ -72,7 +72,7 @@ export function CadastroMenuSection({
       {canAccessCadastroBase && activeCadastroTab === 'empresas' && (
         <section className="mt-5 animate-in">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold text-zinc-900">Cadastro de empresas</h2>
+            <h2 className="text-lg font-semibold text-zinc-900">Cadastro de operadores lotéricos</h2>
             <button
               type="button"
               className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100"
@@ -81,7 +81,7 @@ export function CadastroMenuSection({
                 setIsEmpresaFormVisible((current) => !current)
               }}
             >
-              {isEmpresaFormVisible ? 'Ocultar formulário' : 'Adicionar empresa'}
+              {isEmpresaFormVisible ? 'Ocultar formulário' : 'Adicionar operador lotérico'}
             </button>
           </div>
 
@@ -90,7 +90,7 @@ export function CadastroMenuSection({
               className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
               onSubmit={handleSalvarEmpresa}
             >
-              <h3 className="text-base font-semibold text-zinc-900">Nova empresa</h3>
+              <h3 className="text-base font-semibold text-zinc-900">Novo operador lotérico</h3>
               <div>
                 <label className="field-label" htmlFor="razaoSocial">
                   Razão social
@@ -119,13 +119,13 @@ export function CadastroMenuSection({
                 />
               </div>
               <button className="btn-primary w-full" type="submit">
-                Cadastrar empresa
+                Cadastrar operador lotérico
               </button>
             </form>
           )}
 
           <div className="mt-4 rounded-xl bg-white p-3 text-sm text-zinc-600">
-            Empresas cadastradas: {empresas.length}
+            Operadores lotéricos cadastrados: {empresas.length}
           </div>
         </section>
       )}

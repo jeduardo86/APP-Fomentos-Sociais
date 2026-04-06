@@ -68,7 +68,7 @@ export function OperationalMenuSection({
 
           <div>
             <label className="field-label" htmlFor="filtroEmpresaDestinacao">
-              Buscar empresa (CNPJ ou nome)
+              Buscar operador lotérico (CNPJ ou nome)
             </label>
             <input
               id="filtroEmpresaDestinacao"
@@ -81,7 +81,7 @@ export function OperationalMenuSection({
 
           <div>
             <label className="field-label" htmlFor="empresaSelecionada">
-              Empresa
+              Operador lotérico
             </label>
             <select
               id="empresaSelecionada"
@@ -104,7 +104,7 @@ export function OperationalMenuSection({
 
           <div className="grid gap-3 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-cyan-50 p-4 text-sm sm:grid-cols-2">
             <div>
-              <p className="text-zinc-500">Empresa selecionada</p>
+              <p className="text-zinc-500">Operador lotérico selecionado</p>
               <p className="font-medium text-zinc-900">{empresaSelecionadaInfo?.empresa || '--'}</p>
               <p className="text-xs text-zinc-500">CNPJ: {empresaSelecionadaInfo?.cnpj || '--'}</p>
             </div>
@@ -159,7 +159,7 @@ export function OperationalMenuSection({
             )}
 
             {processosEmpresa.length === 0 && (
-              <p className="text-sm text-zinc-500">Nenhum processo com saldo disponível para a empresa.</p>
+              <p className="text-sm text-zinc-500">Nenhum processo com saldo disponível para o operador lotérico.</p>
             )}
 
             {processosEmpresa.length > 0 && processosEmpresaFiltrados.length === 0 && (
@@ -467,16 +467,16 @@ export function OperationalMenuSection({
 
       {activeTab === 'gerencial' && (
         <section className="mt-5 space-y-4 animate-in">
-          <h2 className="text-lg font-semibold text-zinc-900">Painel gerencial por empresa</h2>
+          <h2 className="text-lg font-semibold text-zinc-900">Painel gerencial por operador lotérico</h2>
           <p className="text-sm text-zinc-600">
-            Visão consolidada para acompanhamento de saldo a destinar e saldo a pagar por empresa.
+            Visão consolidada para acompanhamento de saldo a destinar e saldo a pagar por operador lotérico.
           </p>
 
           <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
             <div className="grid gap-3">
               <div className="space-y-1 min-w-0">
                 <label className="field-label" htmlFor="filtroEmpresaGerencial">
-                  Filtro rápido por CNPJ ou nome da empresa
+                  Filtro rápido por CNPJ ou nome do operador lotérico
                 </label>
                 <div className="flex flex-wrap items-center gap-2">
                   <input
@@ -499,7 +499,7 @@ export function OperationalMenuSection({
               </div>
 
               <p className="text-sm text-zinc-500">
-                Exibindo {resumoEmpresasFiltradas.length} de {resumoEmpresas.length} empresas
+                Exibindo {resumoEmpresasFiltradas.length} de {resumoEmpresas.length} operadores lotéricos
               </p>
 
               {filtroEmpresaGerencial && (
@@ -512,7 +512,7 @@ export function OperationalMenuSection({
 
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <article className="card-metric">
-              <p>Empresas visíveis</p>
+              <p>Operadores lotéricos visíveis</p>
               <strong>{resumoEmpresasFiltradas.length}</strong>
             </article>
             <article className="card-metric">
@@ -549,7 +549,7 @@ export function OperationalMenuSection({
                     type="button"
                     className="block w-full text-left text-base font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline whitespace-normal break-words leading-snug"
                     onClick={() => handleIniciarDestinacaoPorEmpresa(item.empresaKey)}
-                    title="Abrir nova destinação para esta empresa"
+                    title="Abrir nova destinação para este operador lotérico"
                   >
                     <span className="block">{item.empresa}</span>
                     <span className="mt-1 block text-sm font-medium text-zinc-500">
@@ -591,7 +591,7 @@ export function OperationalMenuSection({
             <table className="w-full border-collapse text-left text-sm">
               <thead className="bg-slate-100/90 text-zinc-600">
                 <tr>
-                  <th className="px-4 py-3">Empresa / CNPJ</th>
+                  <th className="px-4 py-3">Operador lotérico / CNPJ</th>
                   <th className="px-4 py-3">Fomento</th>
                   <th className="px-4 py-3">Destinado</th>
                   <th className="px-4 py-3">Pago</th>
@@ -616,7 +616,7 @@ export function OperationalMenuSection({
                         type="button"
                         className="w-full text-left font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline whitespace-normal break-words leading-snug"
                         onClick={() => handleIniciarDestinacaoPorEmpresa(item.empresaKey)}
-                        title="Abrir nova destinação para esta empresa"
+                        title="Abrir nova destinação para este operador lotérico"
                       >
                         <span className="block">{item.empresa}</span>
                         <span className="mt-1 block text-sm font-medium text-zinc-500">

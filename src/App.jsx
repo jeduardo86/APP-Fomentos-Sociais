@@ -49,7 +49,7 @@ const destinationTabs = [
 ]
 
 const cadastroTabs = [
-  { id: 'empresas', label: 'Cadastro de empresas' },
+  { id: 'empresas', label: 'Cadastro de operadores lotéricos' },
   { id: 'entidades', label: 'Cadastro de entidades' },
   { id: 'usuarios', label: 'Cadastro de usuários' },
 ]
@@ -511,7 +511,7 @@ function App() {
     const mapa = new Map()
 
     baseCsv.forEach((item) => {
-      const empresaNome = String(item.empresa || '').trim() || 'Empresa não informada'
+      const empresaNome = String(item.empresa || '').trim() || 'Operador lotérico não informado'
       const empresaKey = getEmpresaGroupKey(item.cnpj, empresaNome)
       const cnpjDigits = sanitizeCNPJ(item.cnpj)
 
@@ -927,7 +927,7 @@ function App() {
 
     return baseCsv
       .filter((item) => {
-        const empresaNome = String(item.empresa || '').trim() || 'Empresa não informada'
+        const empresaNome = String(item.empresa || '').trim() || 'Operador lotérico não informado'
         return getEmpresaGroupKey(item.cnpj, empresaNome) === empresaSelecionada
       })
       .map((item) => {
@@ -1354,7 +1354,7 @@ function App() {
       if (!mapa.has(empresaKey)) {
         mapa.set(empresaKey, {
           empresaKey,
-          empresa: empresaNome || 'Empresa não informada',
+          empresa: empresaNome || 'Operador lotérico não informado',
           cnpj: cnpjMasked || '',
           nomes: new Map(),
           totalFomento: 0,
@@ -1369,7 +1369,7 @@ function App() {
     }
 
     baseCsv.forEach((processo) => {
-      const empresa = String(processo.empresa || '').trim() || 'Empresa não informada'
+      const empresa = String(processo.empresa || '').trim() || 'Operador lotérico não informado'
       const cnpjDigits = sanitizeCNPJ(processo.cnpj)
       const cnpjMasked = cnpjDigits ? maskCNPJ(cnpjDigits) : ''
       const empresaKey = getEmpresaGroupKey(cnpjDigits, empresa)
@@ -1403,7 +1403,7 @@ function App() {
       let empresaKey = processoId ? processoToEmpresaKey.get(processoId) : ''
 
       if (!empresaKey) {
-        const empresa = String(destinacao.empresa || '').trim() || 'Empresa não informada'
+        const empresa = String(destinacao.empresa || '').trim() || 'Operador lotérico não informado'
         const cnpjDigits = sanitizeCNPJ(destinacao.cnpj)
         const cnpjMasked = cnpjDigits ? maskCNPJ(cnpjDigits) : ''
         empresaKey = getEmpresaGroupKey(cnpjDigits, empresa)
@@ -1505,7 +1505,7 @@ function App() {
     const normalizedEmpresaKey = String(empresaKey || '').trim()
 
     if (!normalizedEmpresaKey || !empresasDestinacaoOptions.some((item) => item.key === normalizedEmpresaKey)) {
-      toast.error('Não foi possível abrir a destinação para esta empresa.')
+      toast.error('Não foi possível abrir a destinação para este operador lotérico.')
       return
     }
 
@@ -1902,7 +1902,7 @@ function App() {
     }
 
     if (!empresaSelecionada) {
-      toast.error('Selecione a empresa para destinação.')
+      toast.error('Selecione o operador lotérico para destinação.')
       return
     }
 
@@ -2018,7 +2018,7 @@ function App() {
           0,
         )
 
-        const nomeEmpresa = String(empresaSelecionadaInfo?.empresa || 'Empresa não informada').trim()
+        const nomeEmpresa = String(empresaSelecionadaInfo?.empresa || 'Operador lotérico não informado').trim()
         const cnpjEmpresa = String(empresaSelecionadaInfo?.cnpj || '').trim() || 'Não informado'
         const nomeEntidade = String(entidade?.nome || '').trim() || 'Não informado'
         const cnpjEntidade = String(entidade?.cnpj || '').trim() || 'Não informado'
@@ -2037,12 +2037,12 @@ function App() {
           userProfile?.nome || user?.displayName || user?.email || 'Usuário responsável'
 
         writeLines([
-          'À empresa autorizada,',
+          'Ao operador lotérico autorizado,',
           `Encaminham-se, para ciência e providências, as informações da destinação social registrada na competência ${competenciaDocumento}.`,
           `Data da solicitação: ${solicitacaoDataDocumento}.`,
         ])
 
-        writeLines('Dados da empresa', { fontStyle: 'bold', gapAfter: 1 })
+        writeLines('Dados do operador lotérico', { fontStyle: 'bold', gapAfter: 1 })
         writeLines([`Razão social: ${nomeEmpresa}`, `CNPJ: ${cnpjEmpresa}`], {
           gapAfter: sectionGap,
         })
@@ -2094,7 +2094,7 @@ function App() {
 
         writeLines('Documento emitido para instrução e comprovação administrativa.')
 
-        const empresaSlug = slugifyFileName(nomeEmpresa) || 'empresa'
+        const empresaSlug = slugifyFileName(nomeEmpresa) || 'operador-loterico'
         const competenciaSlug = slugifyFileName(competenciaDocumento.replace('/', '-')) || 'sem-competencia'
         pdf.save(`encaminhamento-destinacao-${empresaSlug}-${competenciaSlug}.pdf`)
         documentoGerado = true
@@ -2272,7 +2272,7 @@ function App() {
         cursorY += gapAfter
       }
 
-      const nomeEmpresa = String(destinacaoItem.empresa || 'Empresa não informada').trim()
+      const nomeEmpresa = String(destinacaoItem.empresa || 'Operador lotérico não informado').trim()
       const cnpjEmpresa = String(empresaRelacionada?.cnpj || '').trim() || 'Não informado'
       const nomeEntidade = String(destinacaoItem.entidadeNome || '').trim() || 'Não informado'
       const cnpjEntidade = String(entidadeRelacionada?.cnpj || '').trim() || 'Não informado'
@@ -2292,12 +2292,12 @@ function App() {
         userProfile?.nome || user?.displayName || user?.email || 'Usuário responsável'
 
       writeLines([
-        'À empresa autorizada,',
+        'Ao operador lotérico autorizado,',
         `Encaminham-se, para ciência e providências, as informações da destinação social registrada na competência ${competenciaDocumento}.`,
         `Data da solicitação: ${solicitacaoDataDocumento}.`,
       ])
 
-      writeLines('Dados da empresa', { fontStyle: 'bold', gapAfter: 1 })
+      writeLines('Dados do operador lotérico', { fontStyle: 'bold', gapAfter: 1 })
       writeLines([`Razão social: ${nomeEmpresa}`, `CNPJ: ${cnpjEmpresa}`], {
         gapAfter: sectionGap,
       })
@@ -2340,7 +2340,7 @@ function App() {
 
       writeLines('Documento emitido para instrução e comprovação administrativa.')
 
-      const empresaSlug = slugifyFileName(nomeEmpresa) || 'empresa'
+      const empresaSlug = slugifyFileName(nomeEmpresa) || 'operador-loterico'
       const competenciaSlug = slugifyFileName(competenciaDocumento.replace('/', '-')) || 'sem-competencia'
       const processoSlug = slugifyFileName(String(destinacaoItem.processoId || 'processo')) || 'processo'
 
@@ -2355,7 +2355,7 @@ function App() {
     event.preventDefault()
 
     if (!user) {
-      toast.error('Autenticação obrigatória para cadastrar empresa.')
+      toast.error('Autenticação obrigatória para cadastrar operador lotérico.')
       return
     }
 
@@ -2377,9 +2377,9 @@ function App() {
       })
       setEmpresaForm({ razaoSocial: '', cnpj: '' })
       setIsEmpresaFormVisible(false)
-      toast.success('Empresa cadastrada.')
+      toast.success('Operador lotérico cadastrado.')
     } catch {
-      toast.error('Não foi possível cadastrar empresa.')
+      toast.error('Não foi possível cadastrar operador lotérico.')
     }
   }
 
@@ -2729,7 +2729,7 @@ function App() {
               Entrar no sistema de fomentos
             </h1>
             <p className="mt-3 text-sm text-zinc-600">
-              Apenas usuários autenticados podem escrever em destinações, entidades e empresas.
+              Apenas usuários autenticados podem escrever em destinações, entidades e operadores lotéricos.
             </p>
 
             <form className="mt-6 space-y-4" onSubmit={handleAuthSubmit}>
@@ -2949,7 +2949,7 @@ function App() {
 
                   <div>
                     <label className="field-label" htmlFor="empresaSelecionada">
-                      Empresa
+                      Operador lotérico
                     </label>
                     <select
                       id="empresaSelecionada"
@@ -3337,13 +3337,13 @@ function App() {
                             observacao: event.target.value,
                           }))
                         }
-                        placeholder="Ex.: orientação adicional para encaminhamento à empresa ou Objeto onde o recurso deve ser aplicado"
+                        placeholder="Ex.: orientação adicional para encaminhamento ao operador lotérico ou objeto onde o recurso deve ser aplicado"
                       />
                     </div>
 
                     <div className="sm:col-span-2 grid gap-3 rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50 to-cyan-50 p-4 text-sm sm:grid-cols-2">
                       <div>
-                        <p className="text-zinc-500">Empresa selecionada</p>
+                        <p className="text-zinc-500">Operador lotérico selecionado</p>
                         <p className="font-medium text-zinc-900">{empresaSelecionadaInfo?.empresa || '--'}</p>
                         <p className="text-xs text-zinc-500">CNPJ: {empresaSelecionadaInfo?.cnpj || '--'}</p>
                       </div>
@@ -3396,7 +3396,7 @@ function App() {
                       className="field-input"
                       value={filtroDestinacaoPendente}
                       onChange={(event) => setFiltroDestinacaoPendente(event.target.value)}
-                      placeholder="Digite empresa, entidade ou nº do processo"
+                      placeholder="Digite operador lotérico, entidade ou nº do processo"
                     />
                     <p className="mt-2 text-xs text-zinc-500">
                       Clique em um card para preencher os dados de pagamento (parcial ou total).
@@ -3439,7 +3439,7 @@ function App() {
                             <div>
                               <p className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-500">Processo</p>
                               <p className="text-base font-semibold text-zinc-900">{item.processoId || '--'}</p>
-                              <p className="mt-1 text-xs text-zinc-600">{item.empresa || 'Empresa não informada'}</p>
+                              <p className="mt-1 text-xs text-zinc-600">{item.empresa || 'Operador lotérico não informado'}</p>
                             </div>
                             <div className="flex flex-col items-end gap-1">
                               <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800">
@@ -3612,7 +3612,7 @@ function App() {
                       className="field-input"
                       value={filtroDestinacaoPaga}
                       onChange={(event) => setFiltroDestinacaoPaga(event.target.value)}
-                      placeholder="Digite empresa, entidade ou nº do processo"
+                      placeholder="Digite operador lotérico, entidade ou nº do processo"
                     />
                   </div>
 
@@ -3632,7 +3632,7 @@ function App() {
                           <div>
                             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-500">Processo</p>
                             <p className="text-base font-semibold text-zinc-900">{item.processoId || '--'}</p>
-                            <p className="mt-1 text-xs text-zinc-600">{item.empresa || 'Empresa não informada'}</p>
+                            <p className="mt-1 text-xs text-zinc-600">{item.empresa || 'Operador lotérico não informado'}</p>
                           </div>
                           <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
                             Pago
@@ -3678,16 +3678,16 @@ function App() {
 
               {activeTab === 'gerencial' && (
                 <section className="mt-5 space-y-4 animate-in">
-                  <h2 className="text-lg font-semibold text-zinc-900">Painel gerencial por empresa</h2>
+                  <h2 className="text-lg font-semibold text-zinc-900">Painel gerencial por operador lotérico</h2>
                   <p className="text-sm text-zinc-600">
-                    Visão consolidada para acompanhamento de saldo a destinar e saldo a pagar por empresa.
+                    Visão consolidada para acompanhamento de saldo a destinar e saldo a pagar por operador lotérico.
                   </p>
 
                   <div className="rounded-2xl border border-slate-200 bg-white/80 p-4">
                     <div className="grid gap-3">
                       <div className="space-y-1 min-w-0">
                         <label className="field-label" htmlFor="filtroEmpresaGerencial">
-                          Filtro rápido por CNPJ ou nome da empresa
+                          Filtro rápido por CNPJ ou nome do operador lotérico
                         </label>
                         <div className="flex flex-wrap items-center gap-2">
                           <input
@@ -3710,7 +3710,7 @@ function App() {
                       </div>
 
                       <p className="text-sm text-zinc-500">
-                        Exibindo {resumoEmpresasFiltradas.length} de {resumoEmpresas.length} empresas
+                        Exibindo {resumoEmpresasFiltradas.length} de {resumoEmpresas.length} operadores lotéricos
                       </p>
 
                       {filtroEmpresaGerencial && (
@@ -3723,7 +3723,7 @@ function App() {
 
                   <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <article className="card-metric">
-                      <p>Empresas visíveis</p>
+                      <p>Operadores lotéricos visíveis</p>
                       <strong>{resumoEmpresasFiltradas.length}</strong>
                     </article>
                     <article className="card-metric">
@@ -3760,7 +3760,7 @@ function App() {
                             type="button"
                             className="block w-full text-left text-base font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline whitespace-normal break-words leading-snug"
                             onClick={() => handleIniciarDestinacaoPorEmpresa(item.empresaKey)}
-                            title="Abrir nova destinação para esta empresa"
+                            title="Abrir nova destinação para este operador lotérico"
                           >
                             <span className="block">{item.empresa}</span>
                             <span className="mt-1 block text-sm font-medium text-zinc-500">
@@ -3802,7 +3802,7 @@ function App() {
                     <table className="w-full border-collapse text-left text-sm">
                       <thead className="bg-slate-100/90 text-zinc-600">
                         <tr>
-                          <th className="px-4 py-3">Empresa / CNPJ</th>
+                          <th className="px-4 py-3">Operador lotérico / CNPJ</th>
                           <th className="px-4 py-3">Fomento</th>
                           <th className="px-4 py-3">Destinado</th>
                           <th className="px-4 py-3">Pago</th>
@@ -3827,7 +3827,7 @@ function App() {
                                 type="button"
                                 className="w-full text-left font-semibold text-cyan-700 transition hover:text-cyan-900 hover:underline whitespace-normal break-words leading-snug"
                                 onClick={() => handleIniciarDestinacaoPorEmpresa(item.empresaKey)}
-                                title="Abrir nova destinação para esta empresa"
+                                title="Abrir nova destinação para este operador lotérico"
                               >
                                 <span className="block">{item.empresa}</span>
                                 <span className="mt-1 block text-sm font-medium text-zinc-500">
@@ -3880,7 +3880,7 @@ function App() {
               {canAccessCadastroBase && activeCadastroTab === 'empresas' && (
                 <section className="mt-5 animate-in">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-lg font-semibold text-zinc-900">Cadastro de empresas</h2>
+                    <h2 className="text-lg font-semibold text-zinc-900">Cadastro de operadores lotéricos</h2>
                     <button
                       type="button"
                       className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100"
@@ -3889,7 +3889,7 @@ function App() {
                         setIsEmpresaFormVisible((current) => !current)
                       }}
                     >
-                      {isEmpresaFormVisible ? 'Ocultar formulário' : 'Adicionar empresa'}
+                      {isEmpresaFormVisible ? 'Ocultar formulário' : 'Adicionar operador lotérico'}
                     </button>
                   </div>
 
@@ -3898,7 +3898,7 @@ function App() {
                       className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
                       onSubmit={handleSalvarEmpresa}
                     >
-                      <h3 className="text-base font-semibold text-zinc-900">Nova empresa</h3>
+                      <h3 className="text-base font-semibold text-zinc-900">Novo operador lotérico</h3>
                       <div>
                         <label className="field-label" htmlFor="razaoSocial">
                           Razão social
@@ -3927,13 +3927,13 @@ function App() {
                         />
                       </div>
                       <button className="btn-primary w-full" type="submit">
-                        Cadastrar empresa
+                        Cadastrar operador lotérico
                       </button>
                     </form>
                   )}
 
                   <div className="mt-4 rounded-xl bg-white p-3 text-sm text-zinc-600">
-                    Empresas cadastradas: {empresas.length}
+                    Operadores lotéricos cadastrados: {empresas.length}
                   </div>
                 </section>
               )}
@@ -4819,7 +4819,7 @@ function App() {
                                 De acordo com a Instrução Normativa nº 001/2024, que regulamenta a modalidade passiva,
                                 os recursos correspondentes a <strong>7,5% da totalidade dos prêmios</strong> devem ser
                                 destinados ao fomento de ações e projetos nas áreas de Assistência, Desportos, Educação,
-                                Saúde e Desenvolvimento Social. Essas ações devem ser executadas pela empresa autorizada
+                                Saúde e Desenvolvimento Social. Essas ações devem ser executadas pelo operador lotérico autorizado
                                 em parceria com a LOTEP. O Decreto nº 44.576/2023 também inclui a{' '}
                                 <strong>Segurança Pública</strong> entre as áreas contempladas.
                               </p>

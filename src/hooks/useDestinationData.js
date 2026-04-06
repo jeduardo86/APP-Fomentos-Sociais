@@ -31,7 +31,7 @@ export function useDestinationData({
     const mapa = new Map()
 
     baseCsv.forEach((item) => {
-      const empresaNome = String(item.empresa || '').trim() || 'Empresa não informada'
+      const empresaNome = String(item.empresa || '').trim() || 'Operador lotérico não informado'
       const empresaKey = getEmpresaGroupKey(item.cnpj, empresaNome)
       const cnpjDigits = sanitizeCNPJ(item.cnpj)
 
@@ -102,7 +102,7 @@ export function useDestinationData({
 
     return baseCsv
       .filter((item) => {
-        const empresaNome = String(item.empresa || '').trim() || 'Empresa não informada'
+        const empresaNome = String(item.empresa || '').trim() || 'Operador lotérico não informado'
         return getEmpresaGroupKey(item.cnpj, empresaNome) === empresaSelecionada
       })
       .map((item) => {
@@ -251,7 +251,7 @@ export function useDestinationData({
       if (!mapa.has(empresaKey)) {
         mapa.set(empresaKey, {
           empresaKey,
-          empresa: empresaNome || 'Empresa não informada',
+          empresa: empresaNome || 'Operador lotérico não informado',
           cnpj: cnpjMasked || '',
           nomes: new Map(),
           totalFomento: 0,
@@ -266,7 +266,7 @@ export function useDestinationData({
     }
 
     baseCsv.forEach((processo) => {
-      const empresa = String(processo.empresa || '').trim() || 'Empresa não informada'
+      const empresa = String(processo.empresa || '').trim() || 'Operador lotérico não informado'
       const cnpjDigits = sanitizeCNPJ(processo.cnpj)
       const cnpjMasked = cnpjDigits ? maskCNPJ(cnpjDigits) : ''
       const empresaKey = getEmpresaGroupKey(cnpjDigits, empresa)
@@ -300,7 +300,7 @@ export function useDestinationData({
       let empresaKey = processoId ? processoToEmpresaKey.get(processoId) : ''
 
       if (!empresaKey) {
-        const empresa = String(destinacao.empresa || '').trim() || 'Empresa não informada'
+        const empresa = String(destinacao.empresa || '').trim() || 'Operador lotérico não informado'
         const cnpjDigits = sanitizeCNPJ(destinacao.cnpj)
         const cnpjMasked = cnpjDigits ? maskCNPJ(cnpjDigits) : ''
         empresaKey = getEmpresaGroupKey(cnpjDigits, empresa)

@@ -105,7 +105,7 @@ export function ReportsMenuSection({
                     De acordo com a Instrução Normativa nº 001/2024, que regulamenta a modalidade passiva,
                     os recursos correspondentes a <strong>7,5% da totalidade dos prêmios</strong> devem ser
                     destinados ao fomento de ações e projetos nas áreas de Assistência, Desportos, Educação,
-                    Saúde e Desenvolvimento Social. Essas ações devem ser executadas pela empresa autorizada
+                    Saúde e Desenvolvimento Social. Essas ações devem ser executadas pelo operador lotérico autorizado
                     em parceria com a LOTEP. O Decreto nº 44.576/2023 também inclui a{' '}
                     <strong>Segurança Pública</strong> entre as áreas contempladas.
                   </p>

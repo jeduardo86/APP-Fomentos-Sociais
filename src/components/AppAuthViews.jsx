@@ -31,7 +31,7 @@ export function LoginView({
             Entrar no sistema de fomentos
           </h1>
           <p className="mt-3 text-sm text-zinc-600">
-            Apenas usuários autenticados podem escrever em destinações, entidades e empresas.
+            Apenas usuários autenticados podem escrever em destinações, entidades e operadores lotéricos.
           </p>
 
           <form className="mt-6 space-y-4" onSubmit={onSubmit}>

@@ -16,7 +16,7 @@ SPA em React + Vite para gerenciar sincronização de base CSV, destinações de
 - Sincronização de CSV via URL pública com upsert em `base_csv` usando `PROCESSO` como chave.
 - Workflow A: formulário de destinação com autocomplete de processo, auto-preenchimento e cálculo de saldo disponível.
 - Workflow B: confirmação de pagamento para registros pendentes (`statusPagamento = pendente`).
-- Cadastro de empresas (com máscara de CNPJ).
+- Cadastro de operadores lotéricos (com máscara de CNPJ).
 - Cadastro de entidades com categoria e helper descritivo por categoria.
 - Datas em formato brasileiro e valores em BRL.
 - Toasts de sucesso/erro para operacoes no Firestore.
@@ -82,7 +82,7 @@ O arquivo `firestore.rules` inclui proteção para permitir leitura/escrita apen
 firebase deploy --only firestore:rules
 ```
 
-Para `destinacoes`, `entidades` e `empresas`, as regras exigem:
+Para `destinacoes`, `entidades` e a coleção `empresas` (operadores lotéricos), as regras exigem:
 
 - `create`: `createdBy` e `updatedBy` iguais ao `uid` do usuário autenticado.
 - `update`: `createdBy` imutável e `updatedBy` igual ao `uid` do usuário autenticado.
@@ -91,7 +91,7 @@ Para `destinacoes`, `entidades` e `empresas`, as regras exigem:
 Modelo de perfis:
 
 - `OPERADOR`: pode criar/atualizar destinações e confirmar pagamentos.
-- `admin`: possui acesso total, incluindo sincronização de `base_csv` e cadastros base (`empresas` e `entidades`).
+- `admin`: possui acesso total, incluindo sincronização de `base_csv` e cadastros base de operadores lotéricos (`empresas`) e entidades.
 
 Ao autenticar pela primeira vez, o app cria automaticamente `users/{uid}` com `role: OPERADOR`.
 Para promover um usuário a `admin`, atualize manualmente o campo `role` no Firestore Console (ou via script backend seguro).

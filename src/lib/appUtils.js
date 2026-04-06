@@ -7,7 +7,7 @@ export const destinationTabs = [
 ]
 
 export const cadastroTabs = [
-  { id: 'empresas', label: 'Cadastro de empresas' },
+  { id: 'empresas', label: 'Cadastro de operadores lotéricos' },
   { id: 'entidades', label: 'Cadastro de entidades' },
   { id: 'usuarios', label: 'Cadastro de usuários' },
 ]
