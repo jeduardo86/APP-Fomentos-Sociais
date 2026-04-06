@@ -191,7 +191,7 @@ function App() {
 
   const [activeMenu, setActiveMenu] = useState('destinacoes')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState('destinacao')
+  const [activeTab, setActiveTab] = useState('gerencial')
   const [activeCadastroTab, setActiveCadastroTab] = useState('empresas')
   const [reportProcessoId, setReportProcessoId] = useState('')
   const [reportDataEmissao, setReportDataEmissao] = useState(todayInputDate)
@@ -208,8 +208,8 @@ function App() {
   const [empresaSelecionada, setEmpresaSelecionada] = useState('')
   const [selectedProcessIds, setSelectedProcessIds] = useState([])
   const [selectedProcessValues, setSelectedProcessValues] = useState({})
+  const [valorAlvoDestinacao, setValorAlvoDestinacao] = useState(0)
   const [filtroProcessoDestinacao, setFiltroProcessoDestinacao] = useState('')
-  const [filtroEmpresaDestinacao, setFiltroEmpresaDestinacao] = useState('')
   const [filtroEmpresaGerencial, setFiltroEmpresaGerencial] = useState('')
 
   const [destForm, setDestForm] = useState({
@@ -464,16 +464,6 @@ function App() {
       .sort((a, b) => a.label.localeCompare(b.label))
   }, [baseCsv])
 
-  const empresasDestinacaoFiltradas = useMemo(() => {
-    const filtro = String(filtroEmpresaDestinacao || '').toLowerCase().trim()
-
-    if (!filtro) {
-      return empresasDestinacaoOptions
-    }
-
-    return empresasDestinacaoOptions.filter((item) => item.searchIndex.includes(filtro))
-  }, [empresasDestinacaoOptions, filtroEmpresaDestinacao])
-
   const empresaSelecionadaInfo = useMemo(
     () => empresasDestinacaoOptions.find((item) => item.key === empresaSelecionada) || null,
     [empresasDestinacaoOptions, empresaSelecionada],
@@ -655,6 +645,60 @@ function App() {
     })
   }, [selectedProcessIds, processosEmpresaById])
 
+  useEffect(() => {
+    const valorAlvo = Number(valorAlvoDestinacao || 0)
+
+    if (valorAlvo <= 0) {
+      return
+    }
+
+    let restante = Number(valorAlvo.toFixed(2))
+    const nextIds = []
+    const nextValues = {}
+
+    selectedProcessIds.forEach((processoId) => {
+      const processo = processosEmpresaById[processoId]
+
+      if (!processo || restante <= 0) {
+        return
+      }
+
+      const saldoDisponivel = Number(processo.saldoDisponivel || 0)
+      const valorAtual = Number(selectedProcessValues[processoId] || 0)
+      const valorNormalizado = Math.max(0, Math.min(Number(valorAtual.toFixed(2)), saldoDisponivel))
+
+      if (valorNormalizado <= 0) {
+        return
+      }
+
+      const valorAplicado = Math.min(valorNormalizado, restante)
+
+      if (valorAplicado <= 0) {
+        return
+      }
+
+      const valorComDuasCasas = Number(valorAplicado.toFixed(2))
+      nextIds.push(processoId)
+      nextValues[processoId] = valorComDuasCasas
+      restante = Number(Math.max(0, restante - valorComDuasCasas).toFixed(2))
+    })
+
+    const idsMudaram = JSON.stringify(nextIds) !== JSON.stringify(selectedProcessIds)
+    const valoresMudaram = JSON.stringify(nextValues) !== JSON.stringify(selectedProcessValues)
+
+    if (!idsMudaram && !valoresMudaram) {
+      return
+    }
+
+    if (idsMudaram) {
+      setSelectedProcessIds(nextIds)
+    }
+
+    if (valoresMudaram) {
+      setSelectedProcessValues(nextValues)
+    }
+  }, [valorAlvoDestinacao, selectedProcessIds, selectedProcessValues, processosEmpresaById])
+
   function getValorSelecionadoParaProcesso(item) {
     const processoId = String(item?.processoId || '')
     const saldoDisponivel = Number(item?.saldoDisponivel || 0)
@@ -687,9 +731,33 @@ function App() {
         return current.filter((id) => id !== processoId)
       }
 
+      const valorAlvo = Number(valorAlvoDestinacao || 0)
+      const saldoProcesso = Number(item.saldoDisponivel || 0)
+      const totalAtualSelecionado = current.reduce((acc, id) => {
+        const processoAtual = processosEmpresaById[id]
+
+        if (!processoAtual) {
+          return acc
+        }
+
+        const saldoAtual = Number(processoAtual.saldoDisponivel || 0)
+        const valorAtual = Number(selectedProcessValues[id] || 0)
+        const normalizado = Math.max(0, Math.min(Number(valorAtual.toFixed(2)), saldoAtual))
+        return acc + normalizado
+      }, 0)
+
+      const restanteAlvo = Number(Math.max(0, valorAlvo - totalAtualSelecionado).toFixed(2))
+      const valorInicial =
+        valorAlvo > 0 ? Math.min(saldoProcesso, restanteAlvo) : Number(saldoProcesso.toFixed(2))
+
+      if (valorAlvo > 0 && valorInicial <= 0) {
+        toast.error('O valor informado para destinação já foi totalmente distribuído.')
+        return current
+      }
+
       setSelectedProcessValues((values) => ({
         ...values,
-        [processoId]: Number(item.saldoDisponivel.toFixed(2)),
+        [processoId]: Number(valorInicial.toFixed(2)),
       }))
 
       return [...current, processoId]
@@ -959,7 +1027,7 @@ function App() {
     setEmpresaSelecionada(normalizedEmpresaKey)
     setSelectedProcessIds([])
     setSelectedProcessValues({})
-    setFiltroEmpresaDestinacao('')
+    setValorAlvoDestinacao(0)
     setFiltroProcessoDestinacao('')
   }
 
@@ -1313,6 +1381,7 @@ function App() {
       })
       setSelectedProcessIds([])
       setSelectedProcessValues({})
+      setValorAlvoDestinacao(0)
       toast.success(
         documentoGerado
           ? `Destinações registradas: ${processosSelecionadosComValor.length}. Documento gerado.`
@@ -2130,19 +2199,6 @@ function App() {
                   <h2 className="text-lg font-semibold text-zinc-900">Formulário de destinação</h2>
 
                   <div>
-                    <label className="field-label" htmlFor="filtroEmpresaDestinacao">
-                      Buscar empresa (CNPJ ou nome)
-                    </label>
-                    <input
-                      id="filtroEmpresaDestinacao"
-                      className="field-input"
-                      value={filtroEmpresaDestinacao}
-                      onChange={(event) => setFiltroEmpresaDestinacao(event.target.value)}
-                      placeholder="Ex: 12.345.678/0001-90 ou razão social"
-                    />
-                  </div>
-
-                  <div>
                     <label className="field-label" htmlFor="empresaSelecionada">
                       Empresa
                     </label>
@@ -2154,15 +2210,38 @@ function App() {
                         setEmpresaSelecionada(event.target.value)
                         setSelectedProcessIds([])
                         setSelectedProcessValues({})
+                        setValorAlvoDestinacao(0)
                       }}
                     >
                       <option value="">Selecione</option>
-                      {empresasDestinacaoFiltradas.map((empresa) => (
+                      {empresasDestinacaoOptions.map((empresa) => (
                         <option key={empresa.key} value={empresa.key}>
                           {empresa.label}
                         </option>
                       ))}
                     </select>
+                  </div>
+
+                  <div>
+                    <label className="field-label" htmlFor="valorAlvoDestinacao">
+                      Valor total a destinar (opcional)
+                    </label>
+                    <NumericFormat
+                      id="valorAlvoDestinacao"
+                      className="field-input"
+                      thousandSeparator="."
+                      decimalSeparator=","
+                      prefix="R$ "
+                      decimalScale={2}
+                      fixedDecimalScale
+                      allowNegative={false}
+                      value={valorAlvoDestinacao}
+                      onValueChange={(values) => setValorAlvoDestinacao(Number(values.floatValue || 0))}
+                      placeholder="Informe o valor limite da destinação"
+                    />
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Quando preenchido, os processos selecionados respeitam esse total e o último processo fica parcial se necessário.
+                    </p>
                   </div>
 
                   <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-4">
@@ -2174,17 +2253,69 @@ function App() {
                           className="text-sm font-semibold text-cyan-700 hover:underline"
                           onClick={() =>
                             {
-                              const processIds = processosEmpresaFiltrados.map((item) => item.processoId)
-                              const merged = new Set([...selectedProcessIds, ...processIds])
-                              setSelectedProcessIds(Array.from(merged))
-                              setSelectedProcessValues((current) => {
-                                const next = { ...current }
-                                processosEmpresaFiltrados.forEach((item) => {
-                                  if (!next[item.processoId] || next[item.processoId] <= 0) {
-                                    next[item.processoId] = Number(item.saldoDisponivel.toFixed(2))
-                                  }
-                                })
-                                return next
+                              const valorAlvo = Number(valorAlvoDestinacao || 0)
+                              const idsAtuais = [...selectedProcessIds]
+                              const valoresAtuais = { ...selectedProcessValues }
+                              let restante =
+                                valorAlvo > 0
+                                  ? Number(
+                                      Math.max(
+                                        0,
+                                        valorAlvo -
+                                          idsAtuais.reduce((acc, id) => {
+                                            const processoAtual = processosEmpresaById[id]
+
+                                            if (!processoAtual) {
+                                              return acc
+                                            }
+
+                                            const saldoAtual = Number(processoAtual.saldoDisponivel || 0)
+                                            const valorAtual = Number(valoresAtuais[id] || 0)
+                                            return acc + Math.max(0, Math.min(valorAtual, saldoAtual))
+                                          }, 0),
+                                      ).toFixed(2),
+                                    )
+                                  : 0
+
+                              const novosIds = []
+                              const novosValores = {}
+
+                              processosEmpresaFiltrados.forEach((item) => {
+                                const processoId = String(item.processoId || '')
+
+                                if (!processoId || idsAtuais.includes(processoId)) {
+                                  return
+                                }
+
+                                const saldoDisponivel = Number(item.saldoDisponivel || 0)
+                                const valorInicial =
+                                  valorAlvo > 0
+                                    ? Math.min(saldoDisponivel, restante)
+                                    : Number(saldoDisponivel.toFixed(2))
+
+                                if (valorInicial <= 0) {
+                                  return
+                                }
+
+                                novosIds.push(processoId)
+                                novosValores[processoId] = Number(valorInicial.toFixed(2))
+
+                                if (valorAlvo > 0) {
+                                  restante = Number(Math.max(0, restante - valorInicial).toFixed(2))
+                                }
+                              })
+
+                              if (!novosIds.length) {
+                                if (valorAlvo > 0) {
+                                  toast.error('Não há saldo disponível para marcar novos processos dentro do valor informado.')
+                                }
+                                return
+                              }
+
+                              setSelectedProcessIds([...idsAtuais, ...novosIds])
+                              setSelectedProcessValues({
+                                ...valoresAtuais,
+                                ...novosValores,
                               })
                             }
                           }
@@ -2424,6 +2555,18 @@ function App() {
                         <p className="text-zinc-500">Valor total calculado</p>
                         <p className="font-semibold text-emerald-700">{formatCurrency(totalSelecionadoParaDestinar)}</p>
                       </div>
+                                  <div>
+                                    <p className="text-zinc-500">Valor informado</p>
+                                    <p className="font-medium text-zinc-900">{formatCurrency(valorAlvoDestinacao || 0)}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-zinc-500">Saldo para completar</p>
+                                    <p className="font-semibold text-amber-700">
+                                      {formatCurrency(
+                                        Math.max(0, Number((valorAlvoDestinacao || 0) - totalSelecionadoParaDestinar)),
+                                      )}
+                                    </p>
+                                  </div>
                     </div>
 
                     <div className="sm:col-span-2">
