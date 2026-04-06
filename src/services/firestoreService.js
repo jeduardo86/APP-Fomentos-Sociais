@@ -1,6 +1,7 @@
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -191,6 +192,124 @@ export async function createDestinacao(payload) {
     createdAt: payload?.createdAt || createdAt,
     updatedAt: createdAt,
   })
+}
+
+export async function updateDestinacao(destinacaoId, payload, userId) {
+  if (!destinacaoId) {
+    throw new Error('Destinação inválida para edição.')
+  }
+
+  const ref = doc(db, 'destinacoes', destinacaoId)
+  const snapshot = await getDoc(ref)
+
+  if (!snapshot.exists()) {
+    throw new Error('Destinação não encontrada para edição.')
+  }
+
+  const atual = snapshot.data()
+  const valorPagoAcumuladoCents = toMoneyCents(atual?.valorPagoAcumulado)
+  const qtdPagamentos = Number(atual?.qtdPagamentos || 0)
+  const hasPayment = valorPagoAcumuladoCents > 0 || qtdPagamentos > 0
+
+  const processoId = String(atual?.processoId || '').trim()
+
+  if (!processoId) {
+    throw new Error('Processo inválido para edição da destinação.')
+  }
+
+  const valorDestinadoCents = toMoneyCents(payload?.valorDestinado)
+  const valorDestinado = fromMoneyCents(valorDestinadoCents)
+
+  if (valorDestinadoCents <= 0) {
+    throw new Error('Valor destinado deve ser maior que zero.')
+  }
+
+  if (hasPayment) {
+    const valorAtualCents = toMoneyCents(atual?.valorDestinado)
+
+    if (valorDestinadoCents !== valorAtualCents) {
+      throw new Error('Valor destinado não pode ser alterado quando já houver pagamento registrado.')
+    }
+
+    await updateDoc(ref, {
+      entidadeId: String(payload?.entidadeId || '').trim(),
+      entidadeNome: String(payload?.entidadeNome || '').trim(),
+      competencia: String(payload?.competencia || '').trim(),
+      processoSolicitacaoEntidade: String(payload?.processoSolicitacaoEntidade || '').trim(),
+      observacao: String(payload?.observacao || '').trim(),
+      updatedAt: new Date().toISOString(),
+      updatedBy: userId || '',
+    })
+
+    return
+  }
+
+  const baseRef = doc(db, 'base_csv', toSafeDocId(processoId))
+  const baseSnapshot = await getDoc(baseRef)
+
+  const limiteProcessoCents = baseSnapshot.exists()
+    ? getLimiteProcessoCents(baseSnapshot.data())
+    : getLimiteProcessoCents(atual)
+
+  if (limiteProcessoCents <= 0) {
+    throw new Error('Não foi possível determinar o limite de fomento para este processo.')
+  }
+
+  const existentesQuery = query(collections.destinacoes, where('processoId', '==', processoId))
+  const existentesSnapshot = await getDocs(existentesQuery)
+
+  const totalOutrasDestinacoesCents = existentesSnapshot.docs.reduce((acc, entry) => {
+    if (entry.id === destinacaoId) {
+      return acc
+    }
+
+    return acc + toMoneyCents(entry.data().valorDestinado)
+  }, 0)
+
+  if (totalOutrasDestinacoesCents + valorDestinadoCents > limiteProcessoCents) {
+    const disponivelCents = Math.max(0, limiteProcessoCents - totalOutrasDestinacoesCents)
+    throw new Error(
+      `Saldo insuficiente para este processo no momento da edição. Limite: ${fromMoneyCents(limiteProcessoCents).toFixed(2)} | já destinado: ${fromMoneyCents(totalOutrasDestinacoesCents).toFixed(2)} | disponível: ${fromMoneyCents(disponivelCents).toFixed(2)} | solicitado: ${fromMoneyCents(valorDestinadoCents).toFixed(2)}.`,
+    )
+  }
+
+  await updateDoc(ref, {
+    entidadeId: String(payload?.entidadeId || '').trim(),
+    entidadeNome: String(payload?.entidadeNome || '').trim(),
+    competencia: String(payload?.competencia || '').trim(),
+    processoSolicitacaoEntidade: String(payload?.processoSolicitacaoEntidade || '').trim(),
+    observacao: String(payload?.observacao || '').trim(),
+    valorDestinado,
+    updatedAt: new Date().toISOString(),
+    updatedBy: userId || '',
+  })
+}
+
+export async function deleteDestinacao(destinacaoId, userId) {
+  if (!destinacaoId) {
+    throw new Error('Destinação inválida para exclusão.')
+  }
+
+  const ref = doc(db, 'destinacoes', destinacaoId)
+  const snapshot = await getDoc(ref)
+
+  if (!snapshot.exists()) {
+    throw new Error('Destinação não encontrada para exclusão.')
+  }
+
+  const atual = snapshot.data()
+  const valorPagoAcumuladoCents = toMoneyCents(atual?.valorPagoAcumulado)
+  const qtdPagamentos = Number(atual?.qtdPagamentos || 0)
+
+  if (valorPagoAcumuladoCents > 0 || qtdPagamentos > 0) {
+    throw new Error('Destinações com pagamento registrado não podem ser excluídas.')
+  }
+
+  await deleteDoc(ref)
+
+  if (userId) {
+    console.info(`Destinação ${destinacaoId} excluída por ${userId}.`)
+  }
 }
 
 export async function registerDestinacaoPayment(destinacaoId, pgtoData, formaPgto, valorPago, userId) {

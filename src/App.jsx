@@ -25,6 +25,7 @@ import {
   collections,
   createUserProfileByAdmin,
   createDestinacao,
+  deleteDestinacao,
   createEmpresa,
   createEntidade,
   ensureUserProfile,
@@ -35,6 +36,7 @@ import {
   subscribeUserProfile,
   subscribeUsers,
   syncBaseCsv,
+  updateDestinacao,
   updateEntidade,
   updateUserAccess,
   updateUserName,
@@ -254,6 +256,16 @@ function createInitialEntidadeForm() {
   }
 }
 
+function createInitialEditDestinacaoForm() {
+  return {
+    entidadeId: '',
+    competencia: '',
+    processoSolicitacaoEntidade: '',
+    observacao: '',
+    valorDestinado: 0,
+  }
+}
+
 function App() {
   const todayInputDate = getTodayInputDate()
 
@@ -313,6 +325,8 @@ function App() {
   const [tipoPagamentoSelecionado, setTipoPagamentoSelecionado] = useState('parcial')
   const [filtroDestinacaoPendente, setFiltroDestinacaoPendente] = useState('')
   const [filtroDestinacaoPaga, setFiltroDestinacaoPaga] = useState('')
+  const [editingDestinacaoId, setEditingDestinacaoId] = useState('')
+  const [editDestinacaoForm, setEditDestinacaoForm] = useState(createInitialEditDestinacaoForm())
 
   const [empresaForm, setEmpresaForm] = useState({ razaoSocial: '', cnpj: '' })
   const [isEmpresaFormVisible, setIsEmpresaFormVisible] = useState(false)
@@ -2144,6 +2158,118 @@ function App() {
     }))
   }
 
+  function handleIniciarEdicaoDestinacao(item) {
+    if (!item) {
+      return
+    }
+
+    setEditingDestinacaoId(item.id)
+    setEditDestinacaoForm({
+      entidadeId: String(item.entidadeId || '').trim(),
+      competencia: String(item.competencia || '').trim(),
+      processoSolicitacaoEntidade: String(item.processoSolicitacaoEntidade || '').trim(),
+      observacao: String(item.observacao || '').trim(),
+      valorDestinado: Number(item.valorDestinado || 0),
+    })
+  }
+
+  function handleCancelarEdicaoDestinacao() {
+    setEditingDestinacaoId('')
+    setEditDestinacaoForm(createInitialEditDestinacaoForm())
+  }
+
+  async function handleSalvarEdicaoDestinacao(event, item) {
+    event.preventDefault()
+    event.stopPropagation()
+
+    if (!user) {
+      toast.error('Autenticação obrigatória para editar destinação.')
+      return
+    }
+
+    if (!item?.id) {
+      toast.error('Destinação inválida para edição.')
+      return
+    }
+
+    if (!editDestinacaoForm.entidadeId || !editDestinacaoForm.competencia) {
+      toast.error('Informe entidade e competência para editar a destinação.')
+      return
+    }
+
+    const entidade = entidades.find((entry) => entry.id === editDestinacaoForm.entidadeId)
+    const valorDestinado = Number(editDestinacaoForm.valorDestinado || 0)
+
+    if (valorDestinado <= 0) {
+      toast.error('O valor destinado deve ser maior que zero.')
+      return
+    }
+
+    try {
+      await updateDestinacao(
+        item.id,
+        {
+          entidadeId: editDestinacaoForm.entidadeId,
+          entidadeNome: entidade?.nome || '',
+          competencia: toCompetenciaMask(editDestinacaoForm.competencia),
+          processoSolicitacaoEntidade: editDestinacaoForm.processoSolicitacaoEntidade,
+          observacao: editDestinacaoForm.observacao,
+          valorDestinado,
+        },
+        user.uid,
+      )
+
+      handleCancelarEdicaoDestinacao()
+      toast.success('Destinação atualizada com sucesso.')
+    } catch (error) {
+      toast.error(error.message || 'Não foi possível atualizar a destinação.')
+    }
+  }
+
+  async function handleExcluirDestinacao(item) {
+    if (!user) {
+      toast.error('Autenticação obrigatória para excluir destinação.')
+      return
+    }
+
+    if (!item?.id) {
+      toast.error('Destinação inválida para exclusão.')
+      return
+    }
+
+    const valorPagoAcumulado = Number(item.valorPagoAcumulado || 0)
+    const qtdPagamentos = Number(item.qtdPagamentos || 0)
+
+    if (valorPagoAcumulado > 0 || qtdPagamentos > 0) {
+      toast.error('Destinações com pagamento registrado não podem ser excluídas.')
+      return
+    }
+
+    const confirmado = window.confirm(
+      `Confirma excluir a destinação do processo ${item.processoId || '--'} para ${item.entidadeNome || '--'}?`,
+    )
+
+    if (!confirmado) {
+      return
+    }
+
+    try {
+      await deleteDestinacao(item.id, user.uid)
+
+      if (editingDestinacaoId === item.id) {
+        handleCancelarEdicaoDestinacao()
+      }
+
+      if (pagamentoForm.destinacaoId === item.id) {
+        setPagamentoForm((current) => ({ ...current, destinacaoId: '', valorPago: 0 }))
+      }
+
+      toast.success('Destinação excluída com sucesso.')
+    } catch (error) {
+      toast.error(error.message || 'Não foi possível excluir a destinação.')
+    }
+  }
+
   function handleMudarTipoPagamento(tipo) {
     setTipoPagamentoSelecionado(tipo)
 
@@ -3415,6 +3541,8 @@ function App() {
                         0,
                         Number(item.valorDestinado || 0) - Number(item.valorPagoAcumulado || 0),
                       )
+                      const hasPagamentoRegistrado =
+                        Number(item.valorPagoAcumulado || 0) > 0 || Number(item.qtdPagamentos || 0) > 0
                       const isSelecionada = pagamentoForm.destinacaoId === item.id
 
                       return (
@@ -3475,14 +3603,168 @@ function App() {
                           </div>
 
                           <div className="mt-4 flex items-center justify-end">
-                            <button
-                              type="button"
-                              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 sm:w-auto"
-                              onClick={() => handleBaixarPdfDestinacao(item)}
-                            >
-                              Baixar PDF
-                            </button>
+                            <div className="flex w-full flex-wrap justify-end gap-2">
+                              <button
+                                type="button"
+                                className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  handleIniciarEdicaoDestinacao(item)
+                                }}
+                              >
+                                Editar
+                              </button>
+                              {!hasPagamentoRegistrado && (
+                                <button
+                                  type="button"
+                                  className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800 transition hover:bg-rose-100"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    handleExcluirDestinacao(item)
+                                  }}
+                                >
+                                  Excluir
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  handleBaixarPdfDestinacao(item)
+                                }}
+                              >
+                                Baixar PDF
+                              </button>
+                            </div>
                           </div>
+
+                          {editingDestinacaoId === item.id && (
+                            <form
+                              className="mt-4 grid gap-3 rounded-xl border border-cyan-200 bg-white p-3 sm:grid-cols-2"
+                              onClick={(event) => event.stopPropagation()}
+                              onSubmit={(event) => handleSalvarEdicaoDestinacao(event, item)}
+                            >
+                              <div>
+                                <label className="field-label" htmlFor={`edit-entidade-${item.id}`}>
+                                  Entidade
+                                </label>
+                                <select
+                                  id={`edit-entidade-${item.id}`}
+                                  className="field-input"
+                                  value={editDestinacaoForm.entidadeId}
+                                  onChange={(event) =>
+                                    setEditDestinacaoForm((current) => ({
+                                      ...current,
+                                      entidadeId: event.target.value,
+                                    }))
+                                  }
+                                >
+                                  <option value="">Selecione</option>
+                                  {entidades.map((entry) => (
+                                    <option key={entry.id} value={entry.id}>
+                                      {entry.nome}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              <div>
+                                <label className="field-label" htmlFor={`edit-competencia-${item.id}`}>
+                                  Competência
+                                </label>
+                                <input
+                                  id={`edit-competencia-${item.id}`}
+                                  className="field-input"
+                                  value={editDestinacaoForm.competencia}
+                                  onChange={(event) =>
+                                    setEditDestinacaoForm((current) => ({
+                                      ...current,
+                                      competencia: toCompetenciaMask(event.target.value),
+                                    }))
+                                  }
+                                  placeholder="04/2026"
+                                />
+                              </div>
+
+                              <div>
+                                <label className="field-label" htmlFor={`edit-valor-${item.id}`}>
+                                  Valor destinado
+                                </label>
+                                <NumericFormat
+                                  id={`edit-valor-${item.id}`}
+                                  className="field-input"
+                                  thousandSeparator="."
+                                  decimalSeparator="," 
+                                  prefix="R$ "
+                                  decimalScale={2}
+                                  fixedDecimalScale
+                                  allowNegative={false}
+                                  disabled={hasPagamentoRegistrado}
+                                  value={editDestinacaoForm.valorDestinado}
+                                  onValueChange={(values) =>
+                                    setEditDestinacaoForm((current) => ({
+                                      ...current,
+                                      valorDestinado: Number(values.floatValue || 0),
+                                    }))
+                                  }
+                                />
+                                {hasPagamentoRegistrado && (
+                                  <p className="mt-1 text-xs text-zinc-500">
+                                    Valor bloqueado porque já existe pagamento registrado para esta destinação.
+                                  </p>
+                                )}
+                              </div>
+
+                              <div>
+                                <label className="field-label" htmlFor={`edit-processo-solicitacao-${item.id}`}>
+                                  Nº processo de solicitação
+                                </label>
+                                <input
+                                  id={`edit-processo-solicitacao-${item.id}`}
+                                  className="field-input"
+                                  value={editDestinacaoForm.processoSolicitacaoEntidade}
+                                  onChange={(event) =>
+                                    setEditDestinacaoForm((current) => ({
+                                      ...current,
+                                      processoSolicitacaoEntidade: event.target.value,
+                                    }))
+                                  }
+                                  placeholder="Ex.: LTP-PRC-2026/12345"
+                                />
+                              </div>
+
+                              <div className="sm:col-span-2">
+                                <label className="field-label" htmlFor={`edit-observacao-${item.id}`}>
+                                  Observação
+                                </label>
+                                <textarea
+                                  id={`edit-observacao-${item.id}`}
+                                  className="field-input min-h-[88px]"
+                                  value={editDestinacaoForm.observacao}
+                                  onChange={(event) =>
+                                    setEditDestinacaoForm((current) => ({
+                                      ...current,
+                                      observacao: event.target.value,
+                                    }))
+                                  }
+                                />
+                              </div>
+
+                              <div className="sm:col-span-2 flex flex-wrap justify-end gap-2">
+                                <button
+                                  type="button"
+                                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
+                                  onClick={handleCancelarEdicaoDestinacao}
+                                >
+                                  Cancelar
+                                </button>
+                                <button className="btn-primary" type="submit">
+                                  Salvar edição
+                                </button>
+                              </div>
+                            </form>
+                          )}
 
                           {isSelecionada && (
                             <form
@@ -3662,14 +3944,147 @@ function App() {
                         </div>
 
                         <div className="mt-4 flex items-center justify-end">
-                          <button
-                            type="button"
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 sm:w-auto"
-                            onClick={() => handleBaixarPdfDestinacao(item)}
-                          >
-                            Baixar PDF
-                          </button>
+                          <div className="flex w-full flex-wrap justify-end gap-2">
+                            <button
+                              type="button"
+                              className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100"
+                              onClick={() => handleIniciarEdicaoDestinacao(item)}
+                            >
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
+                              onClick={() => handleBaixarPdfDestinacao(item)}
+                            >
+                              Baixar PDF
+                            </button>
+                          </div>
                         </div>
+
+                        {editingDestinacaoId === item.id && (
+                          <form
+                            className="mt-4 grid gap-3 rounded-xl border border-cyan-200 bg-white p-3 sm:grid-cols-2"
+                            onSubmit={(event) => handleSalvarEdicaoDestinacao(event, item)}
+                          >
+                            <div>
+                              <label className="field-label" htmlFor={`edit-paga-entidade-${item.id}`}>
+                                Entidade
+                              </label>
+                              <select
+                                id={`edit-paga-entidade-${item.id}`}
+                                className="field-input"
+                                value={editDestinacaoForm.entidadeId}
+                                onChange={(event) =>
+                                  setEditDestinacaoForm((current) => ({
+                                    ...current,
+                                    entidadeId: event.target.value,
+                                  }))
+                                }
+                              >
+                                <option value="">Selecione</option>
+                                {entidades.map((entry) => (
+                                  <option key={entry.id} value={entry.id}>
+                                    {entry.nome}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="field-label" htmlFor={`edit-paga-competencia-${item.id}`}>
+                                Competência
+                              </label>
+                              <input
+                                id={`edit-paga-competencia-${item.id}`}
+                                className="field-input"
+                                value={editDestinacaoForm.competencia}
+                                onChange={(event) =>
+                                  setEditDestinacaoForm((current) => ({
+                                    ...current,
+                                    competencia: toCompetenciaMask(event.target.value),
+                                  }))
+                                }
+                                placeholder="04/2026"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="field-label" htmlFor={`edit-paga-valor-${item.id}`}>
+                                Valor destinado
+                              </label>
+                              <NumericFormat
+                                id={`edit-paga-valor-${item.id}`}
+                                className="field-input"
+                                thousandSeparator="."
+                                decimalSeparator="," 
+                                prefix="R$ "
+                                decimalScale={2}
+                                fixedDecimalScale
+                                allowNegative={false}
+                                disabled
+                                value={editDestinacaoForm.valorDestinado}
+                                onValueChange={(values) =>
+                                  setEditDestinacaoForm((current) => ({
+                                    ...current,
+                                    valorDestinado: Number(values.floatValue || 0),
+                                  }))
+                                }
+                              />
+                              <p className="mt-1 text-xs text-zinc-500">
+                                Valor bloqueado porque já existe pagamento registrado para esta destinação.
+                              </p>
+                            </div>
+
+                            <div>
+                              <label className="field-label" htmlFor={`edit-paga-processo-solicitacao-${item.id}`}>
+                                Nº processo de solicitação
+                              </label>
+                              <input
+                                id={`edit-paga-processo-solicitacao-${item.id}`}
+                                className="field-input"
+                                value={editDestinacaoForm.processoSolicitacaoEntidade}
+                                onChange={(event) =>
+                                  setEditDestinacaoForm((current) => ({
+                                    ...current,
+                                    processoSolicitacaoEntidade: event.target.value,
+                                  }))
+                                }
+                                placeholder="Ex.: LTP-PRC-2026/12345"
+                              />
+                            </div>
+
+                            <div className="sm:col-span-2">
+                              <label className="field-label" htmlFor={`edit-paga-observacao-${item.id}`}>
+                                Observação
+                              </label>
+                              <textarea
+                                id={`edit-paga-observacao-${item.id}`}
+                                className="field-input min-h-[88px]"
+                                value={editDestinacaoForm.observacao}
+                                onChange={(event) =>
+                                  setEditDestinacaoForm((current) => ({
+                                    ...current,
+                                    observacao: event.target.value,
+                                  }))
+                                }
+                              />
+                            </div>
+
+                            <div className="sm:col-span-2 flex flex-wrap justify-end gap-2">
+                              <button
+                                type="button"
+                                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
+                                onClick={handleCancelarEdicaoDestinacao}
+                              >
+                                Cancelar
+                              </button>
+                              <button className="btn-primary" type="submit">
+                                Salvar edição
+                              </button>
+                            </div>
+                          </form>
+                        )}
                       </article>
                     ))}
                   </div>
