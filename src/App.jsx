@@ -45,6 +45,7 @@ const destinationTabs = [
   { id: 'gerencial', label: 'Painel gerencial' },
   { id: 'destinacao', label: 'Destinações' },
   { id: 'pagamento', label: 'Confirmação de pagamento' },
+  { id: 'pagas', label: 'Destinações pagas' },
 ]
 
 const cadastroTabs = [
@@ -311,6 +312,7 @@ function App() {
   })
   const [tipoPagamentoSelecionado, setTipoPagamentoSelecionado] = useState('parcial')
   const [filtroDestinacaoPendente, setFiltroDestinacaoPendente] = useState('')
+  const [filtroDestinacaoPaga, setFiltroDestinacaoPaga] = useState('')
 
   const [empresaForm, setEmpresaForm] = useState({ razaoSocial: '', cnpj: '' })
   const [isEmpresaFormVisible, setIsEmpresaFormVisible] = useState(false)
@@ -1296,6 +1298,11 @@ function App() {
     [destinacoes],
   )
 
+  const pagas = useMemo(
+    () => destinacoes.filter((item) => item.statusPagamento === 'pago'),
+    [destinacoes],
+  )
+
   const pendentesFiltradosPagamento = useMemo(() => {
     const termo = String(filtroDestinacaoPendente || '').toLowerCase().trim()
 
@@ -1311,6 +1318,28 @@ function App() {
       return empresa.includes(termo) || entidade.includes(termo) || processoId.includes(termo)
     })
   }, [pendentes, filtroDestinacaoPendente])
+
+  const pagasFiltradas = useMemo(() => {
+    const termo = String(filtroDestinacaoPaga || '').toLowerCase().trim()
+
+    const base = [...pagas].sort((a, b) => {
+      const dataA = String(a.pgtoData || a.updatedAt || '')
+      const dataB = String(b.pgtoData || b.updatedAt || '')
+      return dataB.localeCompare(dataA)
+    })
+
+    if (!termo) {
+      return base
+    }
+
+    return base.filter((item) => {
+      const empresa = String(item.empresa || '').toLowerCase()
+      const entidade = String(item.entidadeNome || '').toLowerCase()
+      const processoId = String(item.processoId || '').toLowerCase()
+
+      return empresa.includes(termo) || entidade.includes(termo) || processoId.includes(termo)
+    })
+  }, [pagas, filtroDestinacaoPaga])
 
   const destinacaoSelecionadaPagamento = useMemo(
     () => pendentes.find((item) => item.id === pagamentoForm.destinacaoId) || null,
@@ -2181,6 +2210,7 @@ function App() {
       setPagamentoForm({ destinacaoId: '', pgtoData: '', formaPgto: 'PIX', valorPago: 0 })
       setTipoPagamentoSelecionado('parcial')
       setFiltroDestinacaoPendente('')
+      setFiltroDestinacaoPaga('')
       toast.success('Pagamento registrado.')
     } catch (error) {
       toast.error(error.message || 'Não foi possível confirmar o pagamento.')
@@ -3564,6 +3594,84 @@ function App() {
                         </article>
                       )
                     })}
+                  </div>
+                </section>
+              )}
+
+              {activeTab === 'pagas' && (
+                <section className="mt-5 space-y-4 animate-in">
+                  <h2 className="text-lg font-semibold text-zinc-900">Destinações pagas</h2>
+                  <p className="text-sm text-zinc-600">A lista exibe destinações com pagamento quitado.</p>
+
+                  <div className="rounded-2xl border border-slate-200 bg-white/80 p-3 sm:p-4">
+                    <label className="field-label" htmlFor="filtroDestinacaoPaga">
+                      Buscar destinações pagas
+                    </label>
+                    <input
+                      id="filtroDestinacaoPaga"
+                      className="field-input"
+                      value={filtroDestinacaoPaga}
+                      onChange={(event) => setFiltroDestinacaoPaga(event.target.value)}
+                      placeholder="Digite empresa, entidade ou nº do processo"
+                    />
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    {pagasFiltradas.length === 0 && (
+                      <article className="rounded-2xl border border-slate-200 bg-white/85 p-4 text-sm text-zinc-500 sm:col-span-2 xl:col-span-3">
+                        Nenhuma destinação paga encontrada.
+                      </article>
+                    )}
+
+                    {pagasFiltradas.map((item) => (
+                      <article
+                        key={item.id}
+                        className="rounded-2xl border border-emerald-200 bg-emerald-50/35 p-4 shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-500">Processo</p>
+                            <p className="text-base font-semibold text-zinc-900">{item.processoId || '--'}</p>
+                            <p className="mt-1 text-xs text-zinc-600">{item.empresa || 'Empresa não informada'}</p>
+                          </div>
+                          <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                            Pago
+                          </span>
+                        </div>
+
+                        <div className="mt-3 space-y-2 text-sm text-zinc-700">
+                          <p>
+                            <span className="font-semibold text-zinc-900">Entidade:</span> {item.entidadeNome || '--'}
+                          </p>
+                          <p>
+                            <span className="font-semibold text-zinc-900">Destinado:</span>{' '}
+                            {formatCurrency(item.valorDestinado || 0)}
+                          </p>
+                          <p>
+                            <span className="font-semibold text-zinc-900">Pago:</span>{' '}
+                            {formatCurrency(item.valorPagoAcumulado || item.valorDestinado || 0)}
+                          </p>
+                          <p>
+                            <span className="font-semibold text-zinc-900">Data de pagamento:</span>{' '}
+                            {formatDateBR(item.pgtoData)}
+                          </p>
+                          <p>
+                            <span className="font-semibold text-zinc-900">Forma de pagamento:</span>{' '}
+                            {item.formaPgto || '--'}
+                          </p>
+                        </div>
+
+                        <div className="mt-4 flex items-center justify-end">
+                          <button
+                            type="button"
+                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 sm:w-auto"
+                            onClick={() => handleBaixarPdfDestinacao(item)}
+                          >
+                            Baixar PDF
+                          </button>
+                        </div>
+                      </article>
+                    ))}
                   </div>
                 </section>
               )}
