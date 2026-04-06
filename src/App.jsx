@@ -11,7 +11,9 @@ import {
   sanitizeCNPJ,
   toCompetenciaMask,
 } from './lib/formatters'
+import { BRAZIL_STATES, fetchMunicipiosByEstado, sortMunicipiosByCapitalFirst } from './lib/brazilLocations'
 import { fetchAndParseCsv } from './services/csvService'
+import { fetchEntidadeByCnpj } from './services/cnpjService'
 import {
   createUserByAdmin,
   loginWithEmail,
@@ -43,7 +45,6 @@ const destinationTabs = [
   { id: 'gerencial', label: 'Painel gerencial' },
   { id: 'destinacao', label: 'Destinações' },
   { id: 'pagamento', label: 'Confirmação de pagamento' },
-  { id: 'pagas', label: 'Destinações pagas' },
 ]
 
 const cadastroTabs = [
@@ -141,7 +142,56 @@ function fromMoneyCents(cents) {
     return 0
   }
 
-  return Math.round((parsed / 100 + Number.EPSILON) * 100) / 100
+  return parsed / 100
+}
+
+function getAnoFromCompetenciaOrDate(item) {
+  const competencia = String(item?.competencia || '').trim()
+  const competenciaMatch = competencia.match(/^(\d{2})\/(\d{4})$/)
+
+  if (competenciaMatch) {
+    return competenciaMatch[2]
+  }
+
+  const solicitacao = String(item?.solicitacaoData || '').trim()
+  const solicitacaoMatch = solicitacao.match(/^(\d{4})-\d{2}-\d{2}$/)
+
+  if (solicitacaoMatch) {
+    return solicitacaoMatch[1]
+  }
+
+  return ''
+}
+
+function formatPercent(value) {
+  const parsed = Number(value || 0)
+
+  return `${parsed.toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}%`
+}
+
+function getStatusPagamentoLabel(value) {
+  if (value === 'pago') {
+    return 'Pago'
+  }
+
+  if (value === 'parcial') {
+    return 'Parcial'
+  }
+
+  return 'Pendente'
+}
+
+function escapeCsvValue(value) {
+  const raw = String(value ?? '')
+
+  if (!raw.includes(';') && !raw.includes('"') && !raw.includes('\n') && !raw.includes('\r')) {
+    return raw
+  }
+
+  return `"${raw.replace(/"/g, '""')}"`
 }
 
 function drawInstitutionalPdfHeader(pdf, title) {
@@ -194,6 +244,8 @@ function createInitialEntidadeForm() {
     nome: '',
     categoria: 'Assistencia',
     cnpj: '',
+    estado: '',
+    municipio: '',
     contato: '',
     responsavel: '',
     chavePix: '',
@@ -214,9 +266,17 @@ function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('gerencial')
   const [activeCadastroTab, setActiveCadastroTab] = useState('empresas')
+  const [activeReportTab, setActiveReportTab] = useState('verificacao')
   const [reportProcessoId, setReportProcessoId] = useState('')
   const [reportDataEmissao, setReportDataEmissao] = useState(todayInputDate)
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
+  const [isGeneratingGerencialPdf, setIsGeneratingGerencialPdf] = useState(false)
+  const [isExportingGerencialCsv, setIsExportingGerencialCsv] = useState(false)
+  const [reportGerencialAno, setReportGerencialAno] = useState('todos')
+  const [reportGerencialCompetencia, setReportGerencialCompetencia] = useState('todos')
+  const [reportGerencialDestino, setReportGerencialDestino] = useState('todos')
+  const [reportGerencialEntidadeId, setReportGerencialEntidadeId] = useState('todos')
+  const [reportGerencialStatus, setReportGerencialStatus] = useState('todos')
   const [csvUrl, setCsvUrl] = useState('')
   const [isSyncing, setIsSyncing] = useState(false)
   const [isSavingCsvLink, setIsSavingCsvLink] = useState(false)
@@ -230,6 +290,8 @@ function App() {
   const [selectedProcessIds, setSelectedProcessIds] = useState([])
   const [selectedProcessValues, setSelectedProcessValues] = useState({})
   const [valorAlvoDestinacao, setValorAlvoDestinacao] = useState(0)
+  const [entidadeSearchDestinacao, setEntidadeSearchDestinacao] = useState('')
+  const [isEntidadeSearchOpen, setIsEntidadeSearchOpen] = useState(false)
   const [filtroProcessoDestinacao, setFiltroProcessoDestinacao] = useState('')
   const [filtroEmpresaGerencial, setFiltroEmpresaGerencial] = useState('')
 
@@ -249,7 +311,6 @@ function App() {
   })
   const [tipoPagamentoSelecionado, setTipoPagamentoSelecionado] = useState('parcial')
   const [filtroDestinacaoPendente, setFiltroDestinacaoPendente] = useState('')
-  const [filtroDestinacaoPaga, setFiltroDestinacaoPaga] = useState('')
 
   const [empresaForm, setEmpresaForm] = useState({ razaoSocial: '', cnpj: '' })
   const [isEmpresaFormVisible, setIsEmpresaFormVisible] = useState(false)
@@ -258,6 +319,9 @@ function App() {
   const [editingEntidadeId, setEditingEntidadeId] = useState('')
   const [isEntidadeModalOpen, setIsEntidadeModalOpen] = useState(false)
   const [isSavingEntidadeModal, setIsSavingEntidadeModal] = useState(false)
+  const [municipiosByEstado, setMunicipiosByEstado] = useState({})
+  const [isLoadingMunicipiosByEstado, setIsLoadingMunicipiosByEstado] = useState(false)
+  const [isConsultandoCnpjEntidade, setIsConsultandoCnpjEntidade] = useState(false)
   const [usersList, setUsersList] = useState([])
   const [roleBusyUserId, setRoleBusyUserId] = useState('')
   const [accessBusyUserId, setAccessBusyUserId] = useState('')
@@ -285,6 +349,8 @@ function App() {
 
   const isAdmin = userProfile?.role === 'admin' && userProfile?.blocked !== true
   const reportContentRef = useRef(null)
+  const isLoadingMunicipiosRef = useRef(false)
+  const lastCnpjLookupRef = useRef('')
   const canAccessCadastroBase = Boolean(user && userProfile && userProfile?.blocked !== true)
   const visibleCadastroTabs = isAdmin
     ? cadastroTabs
@@ -319,6 +385,12 @@ function App() {
     root.setAttribute('data-font-size', isLargeFontEnabled ? 'large' : 'default')
     window.localStorage.setItem(FONT_SIZE_STORAGE_KEY, isLargeFontEnabled ? 'large' : 'default')
   }, [isLargeFontEnabled])
+
+  useEffect(() => {
+    if (!isAdmin && activeReportTab === 'gerencial') {
+      setActiveReportTab('verificacao')
+    }
+  }, [isAdmin, activeReportTab])
 
   useEffect(() => {
     if (!user) {
@@ -421,14 +493,14 @@ function App() {
     return () => stopUsers()
   }, [user, isAdmin, userProfile])
 
-  const totalDestinadoPorProcessoCents = useMemo(() => {
+  const totalDestinadoPorProcesso = useMemo(() => {
     return destinacoes.reduce((acc, item) => {
       const key = String(item.processoId || '').trim()
       if (!key) {
         return acc
       }
 
-      acc[key] = (acc[key] || 0) + toMoneyCents(item.valorDestinado)
+      acc[key] = (acc[key] || 0) + Number(item.valorDestinado || 0)
       return acc
     }, {})
   }, [destinacoes])
@@ -605,6 +677,247 @@ function App() {
     })
   }, [reportDataEmissao])
 
+  const gerencialCategoriaLabelByValue = useMemo(
+    () => new Map(categoriaOptions.map((item) => [item.value, item.label])),
+    [],
+  )
+
+  const entidadesById = useMemo(
+    () =>
+      entidades.reduce((acc, entidade) => {
+        acc[entidade.id] = entidade
+        return acc
+      }, {}),
+    [entidades],
+  )
+
+  const anosGerencialOptions = useMemo(
+    () =>
+      Array.from(new Set(destinacoes.map((item) => getAnoFromCompetenciaOrDate(item)).filter(Boolean))).sort(
+        (a, b) => Number(b) - Number(a),
+      ),
+    [destinacoes],
+  )
+
+  const competenciasGerencialOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(destinacoes.map((item) => String(item.competencia || '').trim()).filter(Boolean)),
+      ).sort((a, b) => {
+        const [mesA, anoA] = a.split('/')
+        const [mesB, anoB] = b.split('/')
+        const valorA = Number(anoA || 0) * 100 + Number(mesA || 0)
+        const valorB = Number(anoB || 0) * 100 + Number(mesB || 0)
+        return valorB - valorA
+      }),
+    [destinacoes],
+  )
+
+  const destinosGerencialOptions = useMemo(
+    () =>
+      Array.from(new Set(destinacoes.map((item) => String(item.produto || '').trim()).filter(Boolean))).sort(
+        (a, b) => a.localeCompare(b),
+      ),
+    [destinacoes],
+  )
+
+  const entidadesGerencialOptions = useMemo(
+    () =>
+      entidades
+        .map((item) => ({ id: item.id, nome: String(item.nome || '').trim() }))
+        .filter((item) => item.id && item.nome)
+        .sort((a, b) => a.nome.localeCompare(b.nome)),
+    [entidades],
+  )
+
+  const statusGerencialOptions = useMemo(() => ['pendente', 'parcial', 'pago'], [])
+
+  const destinacoesGerencialFiltradas = useMemo(() => {
+    return destinacoes.filter((item) => {
+      const anoAtual = getAnoFromCompetenciaOrDate(item)
+      const competenciaAtual = String(item.competencia || '').trim()
+      const destinoAtual = String(item.produto || '').trim()
+      const entidadeIdAtual = String(item.entidadeId || '').trim()
+      const statusAtual = String(item.statusPagamento || 'pendente').trim() || 'pendente'
+
+      if (reportGerencialAno !== 'todos' && anoAtual !== reportGerencialAno) {
+        return false
+      }
+
+      if (reportGerencialCompetencia !== 'todos' && competenciaAtual !== reportGerencialCompetencia) {
+        return false
+      }
+
+      if (reportGerencialDestino !== 'todos' && destinoAtual !== reportGerencialDestino) {
+        return false
+      }
+
+      if (reportGerencialEntidadeId !== 'todos' && entidadeIdAtual !== reportGerencialEntidadeId) {
+        return false
+      }
+
+      if (reportGerencialStatus !== 'todos' && statusAtual !== reportGerencialStatus) {
+        return false
+      }
+
+      return true
+    })
+  }, [
+    destinacoes,
+    reportGerencialAno,
+    reportGerencialCompetencia,
+    reportGerencialDestino,
+    reportGerencialEntidadeId,
+    reportGerencialStatus,
+  ])
+
+  const totalDestinadoGerencialCents = useMemo(
+    () =>
+      destinacoesGerencialFiltradas.reduce((acc, item) => acc + toMoneyCents(item.valorDestinado), 0),
+    [destinacoesGerencialFiltradas],
+  )
+
+  const totalDestinadoGerencial = useMemo(
+    () => fromMoneyCents(totalDestinadoGerencialCents),
+    [totalDestinadoGerencialCents],
+  )
+
+  const quantidadeDestinacoesGerencial = destinacoesGerencialFiltradas.length
+
+  const totalEntidadesGerencial = useMemo(
+    () =>
+      new Set(
+        destinacoesGerencialFiltradas.map((item) => String(item.entidadeId || '').trim()).filter(Boolean),
+      ).size,
+    [destinacoesGerencialFiltradas],
+  )
+
+  const totaisPorAnoGerencial = useMemo(() => {
+    const mapa = new Map()
+
+    destinacoesGerencialFiltradas.forEach((item) => {
+      const ano = getAnoFromCompetenciaOrDate(item) || 'Sem ano'
+      const valorCents = toMoneyCents(item.valorDestinado)
+      mapa.set(ano, (mapa.get(ano) || 0) + valorCents)
+    })
+
+    return Array.from(mapa.entries())
+      .map(([ano, valorCents]) => ({
+        ano,
+        valorCents,
+        valor: fromMoneyCents(valorCents),
+        percentual: totalDestinadoGerencialCents > 0 ? (valorCents / totalDestinadoGerencialCents) * 100 : 0,
+      }))
+      .sort((a, b) => {
+        if (a.ano === 'Sem ano') {
+          return 1
+        }
+
+        if (b.ano === 'Sem ano') {
+          return -1
+        }
+
+        return Number(b.ano) - Number(a.ano)
+      })
+  }, [destinacoesGerencialFiltradas, totalDestinadoGerencialCents])
+
+  const totaisPorCategoriaGerencial = useMemo(() => {
+    const mapa = new Map()
+
+    destinacoesGerencialFiltradas.forEach((item) => {
+      const entidade = entidadesById[item.entidadeId]
+      const categoriaValue = String(entidade?.categoria || '').trim()
+      const categoria = gerencialCategoriaLabelByValue.get(categoriaValue) || categoriaValue || 'Não informada'
+      const valorCents = toMoneyCents(item.valorDestinado)
+      mapa.set(categoria, (mapa.get(categoria) || 0) + valorCents)
+    })
+
+    return Array.from(mapa.entries())
+      .map(([categoria, valorCents]) => ({
+        categoria,
+        valorCents,
+        valor: fromMoneyCents(valorCents),
+        percentual: totalDestinadoGerencialCents > 0 ? (valorCents / totalDestinadoGerencialCents) * 100 : 0,
+      }))
+      .sort((a, b) => b.valorCents - a.valorCents)
+  }, [destinacoesGerencialFiltradas, entidadesById, gerencialCategoriaLabelByValue, totalDestinadoGerencialCents])
+
+  const totaisPorMunicipioGerencial = useMemo(() => {
+    const mapa = new Map()
+
+    destinacoesGerencialFiltradas.forEach((item) => {
+      const entidade = entidadesById[item.entidadeId]
+      const municipio = String(entidade?.municipio || '').trim() || 'Não informado'
+      const estado = String(entidade?.estado || '').trim() || '--'
+      const chave = `${municipio}/${estado}`
+      const valorCents = toMoneyCents(item.valorDestinado)
+
+      const atual = mapa.get(chave) || {
+        municipio,
+        estado,
+        valorCents: 0,
+        quantidade: 0,
+      }
+
+      atual.valorCents += valorCents
+      atual.quantidade += 1
+      mapa.set(chave, atual)
+    })
+
+    return Array.from(mapa.values())
+      .map((item) => ({
+        ...item,
+        valor: fromMoneyCents(item.valorCents),
+      }))
+      .sort((a, b) => {
+        if (b.valorCents !== a.valorCents) {
+          return b.valorCents - a.valorCents
+        }
+
+        return `${a.municipio}${a.estado}`.localeCompare(`${b.municipio}${b.estado}`)
+      })
+  }, [destinacoesGerencialFiltradas, entidadesById])
+
+  const totalMunicipiosGerencial = totaisPorMunicipioGerencial.length
+
+  const linhasDetalhadasGerencial = useMemo(
+    () =>
+      destinacoesGerencialFiltradas
+        .map((item) => {
+          const entidade = entidadesById[item.entidadeId]
+          const categoriaValue = String(entidade?.categoria || '').trim()
+          const valorCents = toMoneyCents(item.valorDestinado)
+
+          return {
+            id: String(item.id || '').trim(),
+            solicitacaoData: String(item.solicitacaoData || '').trim(),
+            competencia: String(item.competencia || '').trim(),
+            ano: getAnoFromCompetenciaOrDate(item) || 'Sem ano',
+            processoId: String(item.processoId || '').trim(),
+            termo: String(item.termo || '').trim(),
+            destino: String(item.produto || '').trim(),
+            entidade: String(item.entidadeNome || entidade?.nome || '').trim(),
+            categoria: gerencialCategoriaLabelByValue.get(categoriaValue) || categoriaValue || 'Não informada',
+            municipio: String(entidade?.municipio || '').trim() || 'Não informado',
+            estado: String(entidade?.estado || '').trim() || '--',
+            status: String(item.statusPagamento || 'pendente').trim() || 'pendente',
+            valorCents,
+            valor: fromMoneyCents(valorCents),
+          }
+        })
+        .sort((a, b) => {
+          const dataA = String(a.solicitacaoData || '')
+          const dataB = String(b.solicitacaoData || '')
+
+          if (dataB !== dataA) {
+            return dataB.localeCompare(dataA)
+          }
+
+          return a.processoId.localeCompare(b.processoId)
+        }),
+    [destinacoesGerencialFiltradas, entidadesById, gerencialCategoriaLabelByValue],
+  )
+
   const processosEmpresa = useMemo(() => {
     if (!empresaSelecionada) {
       return []
@@ -616,24 +929,19 @@ function App() {
         return getEmpresaGroupKey(item.cnpj, empresaNome) === empresaSelecionada
       })
       .map((item) => {
-        const processoId = String(item.processoId || '').trim()
-        const valorFomentoCents = toMoneyCents(getValorFomentoFromProcess(item))
-        const jaDestinadoCents = Number(totalDestinadoPorProcessoCents[processoId] || 0)
-        const saldoDisponivelCents = Math.max(0, valorFomentoCents - jaDestinadoCents)
-        const valorFomento = fromMoneyCents(valorFomentoCents)
-        const saldoDisponivel = fromMoneyCents(saldoDisponivelCents)
+        const valorFomento = Number(getValorFomentoFromProcess(item) || 0)
+        const jaDestinado = Number(totalDestinadoPorProcesso[item.processoId] || 0)
+        const saldoDisponivel = Math.max(0, valorFomento - jaDestinado)
 
         return {
           ...item,
-          processoId,
           valorFomento,
           saldoDisponivel,
-          saldoDisponivelCents,
         }
       })
-      .filter((item) => item.saldoDisponivelCents > 0)
+      .filter((item) => item.saldoDisponivel > 0)
       .sort((a, b) => String(a.processoId || '').localeCompare(String(b.processoId || '')))
-  }, [empresaSelecionada, baseCsv, totalDestinadoPorProcessoCents])
+  }, [empresaSelecionada, baseCsv, totalDestinadoPorProcesso])
 
   const processosEmpresaById = useMemo(
     () =>
@@ -817,6 +1125,129 @@ function App() {
     })
   }, [processosEmpresa, filtroProcessoDestinacao])
 
+  const entidadesDestinacaoFiltradas = useMemo(() => {
+    const termo = String(entidadeSearchDestinacao || '').toLowerCase().trim()
+
+    if (!termo) {
+      return entidades
+    }
+
+    return entidades.filter((entry) => {
+      const nome = String(entry?.nome || '').toLowerCase()
+      const cnpj = String(entry?.cnpj || '').toLowerCase()
+      const categoria = String(entry?.categoria || '').toLowerCase()
+      const estado = String(entry?.estado || '').toLowerCase()
+      const municipio = String(entry?.municipio || '').toLowerCase()
+
+      return (
+        nome.includes(termo) ||
+        cnpj.includes(termo) ||
+        categoria.includes(termo) ||
+        estado.includes(termo) ||
+        municipio.includes(termo)
+      )
+    })
+  }, [entidades, entidadeSearchDestinacao])
+
+  const municipiosDisponiveis = useMemo(() => {
+    const estadoSelecionado = String(entidadeForm.estado || '').trim().toUpperCase()
+
+    if (!estadoSelecionado) {
+      return []
+    }
+
+    const municipiosEstado = municipiosByEstado[estadoSelecionado] || []
+    return sortMunicipiosByCapitalFirst(municipiosEstado, estadoSelecionado)
+  }, [entidadeForm.estado, municipiosByEstado])
+
+  const municipiosDisponiveisComSelecionado = useMemo(() => {
+    const municipioSelecionado = String(entidadeForm.municipio || '').trim()
+
+    if (!municipioSelecionado || municipiosDisponiveis.includes(municipioSelecionado)) {
+      return municipiosDisponiveis
+    }
+
+    return [municipioSelecionado, ...municipiosDisponiveis]
+  }, [entidadeForm.municipio, municipiosDisponiveis])
+
+  useEffect(() => {
+    const estadoSelecionado = String(entidadeForm.estado || '').trim().toUpperCase()
+
+    if (!estadoSelecionado) {
+      if (entidadeForm.municipio) {
+        setEntidadeForm((current) => ({ ...current, municipio: '' }))
+      }
+      return
+    }
+  }, [entidadeForm.estado, entidadeForm.municipio])
+
+  async function handleConsultarDadosCnpjEntidade(rawCnpjValue) {
+    const cnpjLimpo = sanitizeCNPJ(rawCnpjValue)
+
+    if (cnpjLimpo.length !== 14) {
+      return
+    }
+
+    if (isConsultandoCnpjEntidade || lastCnpjLookupRef.current === cnpjLimpo) {
+      return
+    }
+
+    setIsConsultandoCnpjEntidade(true)
+
+    try {
+      const cnpjData = await fetchEntidadeByCnpj(cnpjLimpo)
+
+      setEntidadeForm((current) => {
+        if (sanitizeCNPJ(current.cnpj) !== cnpjLimpo) {
+          return current
+        }
+
+        const nomeAtual = String(current.nome || '').trim()
+        const nomeSugerido = String(cnpjData.nome || '').trim()
+        const estadoSugerido = String(cnpjData.estado || '').trim().toUpperCase()
+        const municipioSugerido = String(cnpjData.municipio || '').trim()
+        const responsavelAtual = String(current.responsavel || '').trim()
+        const responsavelSugerido = String(cnpjData.responsavel || '').trim()
+        const contatoAtual = String(current.contato || '').trim()
+        const contatoSugerido = String(cnpjData.contato || '').trim()
+
+        return {
+          ...current,
+          nome: nomeAtual || nomeSugerido || current.nome,
+          estado: estadoSugerido || current.estado,
+          municipio: municipioSugerido || current.municipio,
+          responsavel: responsavelAtual || responsavelSugerido || current.responsavel,
+          contato: contatoAtual || contatoSugerido || current.contato,
+        }
+      })
+
+      lastCnpjLookupRef.current = cnpjLimpo
+      toast.success('Dados do CNPJ carregados automaticamente.')
+    } catch (error) {
+      toast.error(error?.message || 'Nao foi possivel consultar o CNPJ informado.')
+    } finally {
+      setIsConsultandoCnpjEntidade(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!destForm.entidadeId) {
+      return
+    }
+
+    const entidadeSelecionada = entidades.find((entry) => entry.id === destForm.entidadeId)
+
+    if (!entidadeSelecionada) {
+      return
+    }
+
+    const nomeEntidade = String(entidadeSelecionada.nome || '')
+
+    if (nomeEntidade !== entidadeSearchDestinacao) {
+      setEntidadeSearchDestinacao(nomeEntidade)
+    }
+  }, [destForm.entidadeId, entidades, entidadeSearchDestinacao])
+
   const totalEmFomentos = useMemo(
     () => baseCsv.reduce((acc, item) => acc + getValorFomentoFromProcess(item), 0),
     [baseCsv],
@@ -865,11 +1296,6 @@ function App() {
     [destinacoes],
   )
 
-  const pagas = useMemo(
-    () => destinacoes.filter((item) => item.statusPagamento === 'pago'),
-    [destinacoes],
-  )
-
   const pendentesFiltradosPagamento = useMemo(() => {
     const termo = String(filtroDestinacaoPendente || '').toLowerCase().trim()
 
@@ -885,28 +1311,6 @@ function App() {
       return empresa.includes(termo) || entidade.includes(termo) || processoId.includes(termo)
     })
   }, [pendentes, filtroDestinacaoPendente])
-
-  const pagasFiltradas = useMemo(() => {
-    const termo = String(filtroDestinacaoPaga || '').toLowerCase().trim()
-
-    const base = [...pagas].sort((a, b) => {
-      const dataA = String(a.pgtoData || a.updatedAt || '')
-      const dataB = String(b.pgtoData || b.updatedAt || '')
-      return dataB.localeCompare(dataA)
-    })
-
-    if (!termo) {
-      return base
-    }
-
-    return base.filter((item) => {
-      const empresa = String(item.empresa || '').toLowerCase()
-      const entidade = String(item.entidadeNome || '').toLowerCase()
-      const processoId = String(item.processoId || '').toLowerCase()
-
-      return empresa.includes(termo) || entidade.includes(termo) || processoId.includes(termo)
-    })
-  }, [pagas, filtroDestinacaoPaga])
 
   const destinacaoSelecionadaPagamento = useMemo(
     () => pendentes.find((item) => item.id === pagamentoForm.destinacaoId) || null,
@@ -1145,6 +1549,226 @@ function App() {
     }
   }
 
+  function handleExportarGerencialCsv() {
+    if (!isAdmin) {
+      toast.error('Apenas administradores podem exportar o relatório gerencial.')
+      return
+    }
+
+    if (!linhasDetalhadasGerencial.length) {
+      toast.error('Não há dados para exportar no filtro atual.')
+      return
+    }
+
+    setIsExportingGerencialCsv(true)
+
+    try {
+      const filtrosAplicados = [
+        ['Ano', reportGerencialAno === 'todos' ? 'Todos' : reportGerencialAno],
+        ['Competência', reportGerencialCompetencia === 'todos' ? 'Todas' : reportGerencialCompetencia],
+        ['Destino', reportGerencialDestino === 'todos' ? 'Todos' : reportGerencialDestino],
+        [
+          'Entidade',
+          reportGerencialEntidadeId === 'todos'
+            ? 'Todas'
+            : entidadesById[reportGerencialEntidadeId]?.nome || 'Não informada',
+        ],
+        [
+          'Status',
+          reportGerencialStatus === 'todos' ? 'Todos' : getStatusPagamentoLabel(reportGerencialStatus),
+        ],
+      ]
+
+      const summaryRows = [
+        ['Total destinado', formatCurrency(totalDestinadoGerencial)],
+        ['Total de destinações', String(quantidadeDestinacoesGerencial)],
+        ['Total de entidades', String(totalEntidadesGerencial)],
+        ['Total de municípios', String(totalMunicipiosGerencial)],
+      ]
+
+      const header = [
+        'Data solicitação',
+        'Competência',
+        'Ano',
+        'Processo',
+        'Termo',
+        'Destino',
+        'Entidade',
+        'Categoria',
+        'Município',
+        'UF',
+        'Status',
+        'Valor destinado',
+      ]
+
+      const detailRows = linhasDetalhadasGerencial.map((item) => [
+        formatDateBR(item.solicitacaoData),
+        item.competencia,
+        item.ano,
+        item.processoId,
+        item.termo,
+        item.destino,
+        item.entidade,
+        item.categoria,
+        item.municipio,
+        item.estado,
+        getStatusPagamentoLabel(item.status),
+        formatCurrency(item.valor),
+      ])
+
+      const lines = []
+      lines.push('Relatório;Informações Gerenciais de Destinação de Fomento')
+      lines.push(`Emitido em;${new Date().toLocaleString('pt-BR')}`)
+      lines.push('')
+      lines.push('Filtros aplicados')
+      filtrosAplicados.forEach(([label, value]) => {
+        lines.push(`${escapeCsvValue(label)};${escapeCsvValue(value)}`)
+      })
+      lines.push('')
+      lines.push('Resumo executivo')
+      summaryRows.forEach(([label, value]) => {
+        lines.push(`${escapeCsvValue(label)};${escapeCsvValue(value)}`)
+      })
+      lines.push('')
+      lines.push(header.map((item) => escapeCsvValue(item)).join(';'))
+      detailRows.forEach((row) => {
+        lines.push(row.map((item) => escapeCsvValue(item)).join(';'))
+      })
+
+      const csvContent = `\uFEFF${lines.join('\n')}`
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+
+      link.href = url
+      link.download = `relatorio-gerencial-destinacao-fomento-${new Date().toISOString().slice(0, 10)}.csv`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+
+      toast.success('CSV gerado com sucesso.')
+    } catch {
+      toast.error('Não foi possível gerar o CSV do relatório gerencial.')
+    } finally {
+      setIsExportingGerencialCsv(false)
+    }
+  }
+
+  function handleExportarGerencialPdf() {
+    if (!isAdmin) {
+      toast.error('Apenas administradores podem exportar o relatório gerencial.')
+      return
+    }
+
+    if (!linhasDetalhadasGerencial.length) {
+      toast.error('Não há dados para exportar no filtro atual.')
+      return
+    }
+
+    setIsGeneratingGerencialPdf(true)
+
+    try {
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const marginX = 14
+      const lineHeight = 5
+      const blockGap = 2
+      const contentWidth = pdf.internal.pageSize.getWidth() - marginX * 2
+      const generatedAt = new Date().toLocaleString('pt-BR')
+      const usuarioGerador = userProfile?.nome || user?.displayName || user?.email || 'Usuário responsável'
+
+      let cursorY = drawInstitutionalPdfHeader(pdf, 'Informações Gerenciais de Destinação de Fomento')
+
+      function ensureSpace(requiredHeight = lineHeight) {
+        if (cursorY + requiredHeight > pageHeight - 14) {
+          pdf.addPage()
+          cursorY = 16
+        }
+      }
+
+      function writeText(text, options = {}) {
+        const fontStyle = options.fontStyle || 'normal'
+        const size = options.size || 10
+        const gapAfter = options.gapAfter ?? 1.5
+        const lines = Array.isArray(text) ? text : [text]
+
+        pdf.setFont('helvetica', fontStyle)
+        pdf.setFontSize(size)
+
+        lines.forEach((line) => {
+          const chunks = pdf.splitTextToSize(String(line || ''), contentWidth)
+          const blockHeight = Math.max(lineHeight, chunks.length * lineHeight)
+          ensureSpace(blockHeight)
+          pdf.text(chunks, marginX, cursorY)
+          cursorY += blockHeight
+        })
+
+        cursorY += gapAfter
+      }
+
+      writeText('Filtros aplicados', { fontStyle: 'bold', size: 11, gapAfter: blockGap })
+      writeText([
+        `Ano: ${reportGerencialAno === 'todos' ? 'Todos' : reportGerencialAno}`,
+        `Competência: ${reportGerencialCompetencia === 'todos' ? 'Todas' : reportGerencialCompetencia}`,
+        `Destino: ${reportGerencialDestino === 'todos' ? 'Todos' : reportGerencialDestino}`,
+        `Entidade: ${
+          reportGerencialEntidadeId === 'todos'
+            ? 'Todas'
+            : String(entidadesById[reportGerencialEntidadeId]?.nome || 'Não informada')
+        }`,
+        `Status: ${
+          reportGerencialStatus === 'todos' ? 'Todos' : getStatusPagamentoLabel(reportGerencialStatus)
+        }`,
+      ])
+
+      writeText('Resumo executivo', { fontStyle: 'bold', size: 11, gapAfter: blockGap })
+      writeText([
+        `Valor total destinado: ${formatCurrency(totalDestinadoGerencial)}`,
+        `Total de destinações: ${quantidadeDestinacoesGerencial}`,
+        `Total de entidades atendidas: ${totalEntidadesGerencial}`,
+        `Total de municípios atendidos: ${totalMunicipiosGerencial}`,
+      ])
+
+      writeText('Destinação por ano', { fontStyle: 'bold', size: 11, gapAfter: blockGap })
+      totaisPorAnoGerencial.forEach((item) => {
+        writeText(`${item.ano}: ${formatCurrency(item.valor)} (${formatPercent(item.percentual)})`, {
+          gapAfter: 0.5,
+        })
+      })
+
+      writeText('Destinação por categoria de assistência', {
+        fontStyle: 'bold',
+        size: 11,
+        gapAfter: blockGap,
+      })
+      totaisPorCategoriaGerencial.forEach((item) => {
+        writeText(`${item.categoria}: ${formatCurrency(item.valor)} (${formatPercent(item.percentual)})`, {
+          gapAfter: 0.5,
+        })
+      })
+
+      writeText('Municípios atendidos', { fontStyle: 'bold', size: 11, gapAfter: blockGap })
+      totaisPorMunicipioGerencial.forEach((item) => {
+        writeText(`${item.municipio}/${item.estado}: ${formatCurrency(item.valor)} | Destinações: ${item.quantidade}`, {
+          gapAfter: 0.5,
+        })
+      })
+
+      writeText(
+        [`Relatório emitido em ${generatedAt}.`, `Responsável pela emissão: ${usuarioGerador}.`],
+        { gapAfter: blockGap },
+      )
+
+      pdf.save(`relatorio-gerencial-destinacao-fomento-${new Date().toISOString().slice(0, 10)}.pdf`)
+      toast.success('PDF gerado com sucesso.')
+    } catch {
+      toast.error('Não foi possível gerar o PDF do relatório gerencial.')
+    } finally {
+      setIsGeneratingGerencialPdf(false)
+    }
+  }
+
   useEffect(() => {
     if (!isEntidadeModalOpen) {
       return undefined
@@ -1159,6 +1783,26 @@ function App() {
     window.addEventListener('keydown', handleEscapeClose)
     return () => window.removeEventListener('keydown', handleEscapeClose)
   }, [isEntidadeModalOpen])
+
+  useEffect(() => {
+    if (isLoadingMunicipiosRef.current) {
+      return
+    }
+
+    isLoadingMunicipiosRef.current = true
+    setIsLoadingMunicipiosByEstado(true)
+
+    fetchMunicipiosByEstado()
+      .then((groupedMunicipios) => {
+        setMunicipiosByEstado(groupedMunicipios)
+      })
+      .catch(() => {
+        toast.error('Nao foi possivel carregar a lista de municipios do Brasil.')
+      })
+      .finally(() => {
+        setIsLoadingMunicipiosByEstado(false)
+      })
+  }, [])
 
   async function handleSyncCsv(event) {
     event?.preventDefault?.()
@@ -1264,12 +1908,9 @@ function App() {
     }
 
     const processoComValorInvalido = processosSelecionadosComValor.find(
-      (processo) => {
-        const valorSelecionadoCents = toMoneyCents(processo.valorDestinadoSelecionado)
-        const saldoDisponivelCents = toMoneyCents(processo.saldoDisponivel)
-
-        return valorSelecionadoCents <= 0 || valorSelecionadoCents > saldoDisponivelCents
-      },
+      (processo) =>
+        Number(processo.valorDestinadoSelecionado || 0) <= 0 ||
+        Number(processo.valorDestinadoSelecionado || 0) > Number(processo.saldoDisponivel || 0),
     )
 
     if (processoComValorInvalido) {
@@ -1357,6 +1998,8 @@ function App() {
           String(entidade?.dadosBancarios || '').trim() || 'Não informados'
         const contatoEntidade = String(entidade?.contato || '').trim() || 'Não informado'
         const responsavelEntidade = String(entidade?.responsavel || '').trim() || 'Não informado'
+        const municipioEntidade = String(entidade?.municipio || '').trim() || 'Nao informado'
+        const estadoEntidade = String(entidade?.estado || '').trim() || 'Nao informado'
 
         const competenciaDocumento = String(destForm.competencia || '').trim() || '--/----'
         const solicitacaoDataDocumento = formatDateBR(destForm.solicitacaoData)
@@ -1380,6 +2023,8 @@ function App() {
           [
             `Entidade: ${nomeEntidade}`,
             `CNPJ: ${cnpjEntidade}`,
+            `Municipio: ${municipioEntidade}`,
+            `Estado: ${estadoEntidade}`,
             `Responsável: ${responsavelEntidade}`,
             `Contato: ${contatoEntidade}`,
             `Chave Pix: ${chavePixEntidade}`,
@@ -1436,6 +2081,8 @@ function App() {
         processoSolicitacaoEntidade: '',
         observacao: '',
       })
+      setEntidadeSearchDestinacao('')
+      setIsEntidadeSearchOpen(false)
       setSelectedProcessIds([])
       setSelectedProcessValues({})
       setValorAlvoDestinacao(0)
@@ -1454,11 +2101,7 @@ function App() {
       return
     }
 
-    const saldoPendenteCents = Math.max(
-      0,
-      toMoneyCents(item.valorDestinado) - toMoneyCents(item.valorPagoAcumulado),
-    )
-    const saldoPendente = fromMoneyCents(saldoPendenteCents)
+    const saldoPendente = Math.max(0, Number(item.valorDestinado || 0) - Number(item.valorPagoAcumulado || 0))
 
     setPagamentoForm((current) => ({
       ...current,
@@ -1513,23 +2156,18 @@ function App() {
         Number(destinacaoSelecionadaPagamento.valorPagoAcumulado || 0),
     )
 
-    const saldoPendenteCents = toMoneyCents(saldoPendente)
-    const valorPagoCents =
-      tipoPagamentoSelecionado === 'total'
-        ? saldoPendenteCents
-        : toMoneyCents(Number(pagamentoForm.valorPago || 0))
+    const valorPago =
+      tipoPagamentoSelecionado === 'total' ? Number(saldoPendente.toFixed(2)) : Number(pagamentoForm.valorPago || 0)
 
-    if (valorPagoCents <= 0) {
+    if (valorPago <= 0) {
       toast.error('Informe um valor de pagamento maior que zero.')
       return
     }
 
-    if (valorPagoCents > saldoPendenteCents) {
+    if (valorPago > saldoPendente + 0.009) {
       toast.error('O valor pago não pode ser maior que o saldo pendente da destinação.')
       return
     }
-
-    const valorPago = fromMoneyCents(valorPagoCents)
 
     try {
       await registerDestinacaoPayment(
@@ -1614,6 +2252,8 @@ function App() {
       const contatoEntidade = String(entidadeRelacionada?.contato || '').trim() || 'Não informado'
       const responsavelEntidade =
         String(entidadeRelacionada?.responsavel || '').trim() || 'Não informado'
+      const municipioEntidade = String(entidadeRelacionada?.municipio || '').trim() || 'Nao informado'
+      const estadoEntidade = String(entidadeRelacionada?.estado || '').trim() || 'Nao informado'
 
       const competenciaDocumento = String(destinacaoItem.competencia || '').trim() || '--/----'
       const solicitacaoDataDocumento = formatDateBR(destinacaoItem.solicitacaoData)
@@ -1637,6 +2277,8 @@ function App() {
         [
           `Entidade: ${nomeEntidade}`,
           `CNPJ: ${cnpjEntidade}`,
+          `Municipio: ${municipioEntidade}`,
+          `Estado: ${estadoEntidade}`,
           `Responsável: ${responsavelEntidade}`,
           `Contato: ${contatoEntidade}`,
           `Chave Pix: ${chavePixEntidade}`,
@@ -1725,6 +2367,8 @@ function App() {
     const cnpjLimpo = sanitizeCNPJ(entidadeForm.cnpj)
     const chavePix = entidadeForm.chavePix.trim()
     const dadosBancarios = entidadeForm.dadosBancarios.trim()
+    const estado = String(entidadeForm.estado || '').trim().toUpperCase()
+    const municipio = String(entidadeForm.municipio || '').trim()
 
     if (!normalizedEntidadeNome || !entidadeForm.categoria) {
       toast.error('Informe nome e categoria da entidade.')
@@ -1733,6 +2377,11 @@ function App() {
 
     if (cnpjLimpo.length !== 14) {
       toast.error('Informe um CNPJ valido para a entidade.')
+      return
+    }
+
+    if (!estado || !municipio) {
+      toast.error('Informe o estado e municipio da entidade.')
       return
     }
 
@@ -1770,6 +2419,8 @@ function App() {
         nome: entidadeForm.nome.trim(),
         categoria: entidadeForm.categoria,
         cnpj: maskCNPJ(cnpjLimpo),
+        estado,
+        municipio,
         contato: entidadeForm.contato.trim(),
         responsavel: entidadeForm.responsavel.trim(),
         chavePix,
@@ -1822,6 +2473,8 @@ function App() {
       nome: String(entry?.nome || ''),
       categoria: String(entry?.categoria || 'Assistencia'),
       cnpj: maskCNPJ(entry?.cnpj || ''),
+      estado: String(entry?.estado || ''),
+      municipio: String(entry?.municipio || ''),
       contato: String(entry?.contato || ''),
       responsavel: String(entry?.responsavel || ''),
       chavePix: String(entry?.chavePix || ''),
@@ -2517,7 +3170,7 @@ function App() {
 
                     <div>
                       <div className="mb-1 flex items-center justify-between gap-2">
-                        <label className="field-label mb-0" htmlFor="entidadeId">
+                        <label className="field-label mb-0" htmlFor="entidadeBuscaDestinacao">
                           Entidade
                         </label>
                         <button
@@ -2532,6 +3185,54 @@ function App() {
                           Nova entidade
                         </button>
                       </div>
+                      <div className="relative">
+                        <input
+                          id="entidadeBuscaDestinacao"
+                          className="field-input"
+                          value={entidadeSearchDestinacao}
+                          onFocus={() => setIsEntidadeSearchOpen(true)}
+                          onBlur={() => {
+                            setTimeout(() => setIsEntidadeSearchOpen(false), 120)
+                          }}
+                          onChange={(event) => {
+                            const nextValue = event.target.value
+                            setEntidadeSearchDestinacao(nextValue)
+                            setIsEntidadeSearchOpen(true)
+                            setDestForm((current) => ({ ...current, entidadeId: '' }))
+                          }}
+                          placeholder="Digite para buscar por nome, CNPJ ou categoria"
+                          autoComplete="off"
+                        />
+
+                        {isEntidadeSearchOpen && (
+                          <div className="absolute z-20 mt-1 max-h-56 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                            {entidadesDestinacaoFiltradas.length === 0 && (
+                              <p className="px-3 py-2 text-sm text-zinc-500">Nenhuma entidade encontrada.</p>
+                            )}
+
+                            {entidadesDestinacaoFiltradas.map((entry) => (
+                              <button
+                                key={entry.id}
+                                type="button"
+                                className="block w-full rounded-lg px-3 py-2 text-left text-sm text-zinc-700 transition hover:bg-slate-100"
+                                onMouseDown={(event) => {
+                                  event.preventDefault()
+                                  setDestForm((current) => ({ ...current, entidadeId: entry.id }))
+                                  setEntidadeSearchDestinacao(String(entry.nome || ''))
+                                  setIsEntidadeSearchOpen(false)
+                                }}
+                              >
+                                <span className="block font-medium text-zinc-900">{entry.nome}</span>
+                                <span className="block text-xs text-zinc-500">
+                                  {entry.cnpj || 'CNPJ não informado'} | {entry.categoria || 'Sem categoria'} |{' '}
+                                  {entry.municipio || 'Municipio nao informado'} - {entry.estado || '--'}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
                       <select
                         id="entidadeId"
                         className="field-input"
@@ -2539,6 +3240,9 @@ function App() {
                         onChange={(event) =>
                           setDestForm((current) => ({ ...current, entidadeId: event.target.value }))
                         }
+                        style={{ display: 'none' }}
+                        aria-hidden="true"
+                        tabIndex={-1}
                       >
                         <option value="">Selecione</option>
                         {entidades.map((entry) => (
@@ -2547,6 +3251,10 @@ function App() {
                           </option>
                         ))}
                       </select>
+
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Entidade selecionada: {destForm.entidadeId ? 'sim' : 'não'}
+                      </p>
                     </div>
 
                     <div>
@@ -2860,84 +3568,6 @@ function App() {
                 </section>
               )}
 
-              {activeTab === 'pagas' && (
-                <section className="mt-5 space-y-4 animate-in">
-                  <h2 className="text-lg font-semibold text-zinc-900">Destinações pagas</h2>
-                  <p className="text-sm text-zinc-600">A lista exibe destinações com pagamento quitado.</p>
-
-                  <div className="rounded-2xl border border-slate-200 bg-white/80 p-3 sm:p-4">
-                    <label className="field-label" htmlFor="filtroDestinacaoPaga">
-                      Buscar destinações pagas
-                    </label>
-                    <input
-                      id="filtroDestinacaoPaga"
-                      className="field-input"
-                      value={filtroDestinacaoPaga}
-                      onChange={(event) => setFiltroDestinacaoPaga(event.target.value)}
-                      placeholder="Digite empresa, entidade ou nº do processo"
-                    />
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {pagasFiltradas.length === 0 && (
-                      <article className="rounded-2xl border border-slate-200 bg-white/85 p-4 text-sm text-zinc-500 sm:col-span-2 xl:col-span-3">
-                        Nenhuma destinação paga encontrada.
-                      </article>
-                    )}
-
-                    {pagasFiltradas.map((item) => (
-                      <article
-                        key={item.id}
-                        className="rounded-2xl border border-emerald-200 bg-emerald-50/35 p-4 shadow-sm"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-500">Processo</p>
-                            <p className="text-base font-semibold text-zinc-900">{item.processoId || '--'}</p>
-                            <p className="mt-1 text-xs text-zinc-600">{item.empresa || 'Empresa não informada'}</p>
-                          </div>
-                          <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-                            Pago
-                          </span>
-                        </div>
-
-                        <div className="mt-3 space-y-2 text-sm text-zinc-700">
-                          <p>
-                            <span className="font-semibold text-zinc-900">Entidade:</span> {item.entidadeNome || '--'}
-                          </p>
-                          <p>
-                            <span className="font-semibold text-zinc-900">Destinado:</span>{' '}
-                            {formatCurrency(item.valorDestinado || 0)}
-                          </p>
-                          <p>
-                            <span className="font-semibold text-zinc-900">Pago:</span>{' '}
-                            {formatCurrency(item.valorPagoAcumulado || item.valorDestinado || 0)}
-                          </p>
-                          <p>
-                            <span className="font-semibold text-zinc-900">Data de pagamento:</span>{' '}
-                            {formatDateBR(item.pgtoData)}
-                          </p>
-                          <p>
-                            <span className="font-semibold text-zinc-900">Forma de pagamento:</span>{' '}
-                            {item.formaPgto || '--'}
-                          </p>
-                        </div>
-
-                        <div className="mt-4 flex items-center justify-end">
-                          <button
-                            type="button"
-                            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 sm:w-auto"
-                            onClick={() => handleBaixarPdfDestinacao(item)}
-                          >
-                            Baixar PDF
-                          </button>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                </section>
-              )}
-
               {activeTab === 'gerencial' && (
                 <section className="mt-5 space-y-4 animate-in">
                   <h2 className="text-lg font-semibold text-zinc-900">Painel gerencial por empresa</h2>
@@ -3226,20 +3856,6 @@ function App() {
                         {editingEntidadeId ? 'Editar entidade' : 'Nova entidade'}
                       </h3>
                     <div>
-                      <label className="field-label" htmlFor="entidadeNome">
-                        Nome da entidade
-                      </label>
-                      <input
-                        id="entidadeNome"
-                        className="field-input"
-                        value={entidadeForm.nome}
-                        onChange={(event) =>
-                          setEntidadeForm((current) => ({ ...current, nome: event.target.value }))
-                        }
-                      />
-                    </div>
-
-                    <div>
                       <label className="field-label" htmlFor="entidadeCnpj">
                         CNPJ
                       </label>
@@ -3250,7 +3866,30 @@ function App() {
                         onChange={(event) =>
                           setEntidadeForm((current) => ({ ...current, cnpj: maskCNPJ(event.target.value) }))
                         }
+                        onBlur={(event) => {
+                          handleConsultarDadosCnpjEntidade(event.target.value)
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault()
+                            event.currentTarget.blur()
+                          }
+                        }}
                         placeholder="00.000.000/0000-00"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="entidadeNome">
+                        Nome da entidade
+                      </label>
+                      <input
+                        id="entidadeNome"
+                        className="field-input"
+                        value={entidadeForm.nome}
+                        onChange={(event) =>
+                          setEntidadeForm((current) => ({ ...current, nome: event.target.value }))
+                        }
                       />
                     </div>
 
@@ -3299,6 +3938,59 @@ function App() {
                         {categoriaOptions.map((item) => (
                           <option key={item.value} value={item.value}>
                             {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="entidadeEstado">
+                        Estado
+                      </label>
+                      <select
+                        id="entidadeEstado"
+                        className="field-input"
+                        value={entidadeForm.estado}
+                        onChange={(event) =>
+                          setEntidadeForm((current) => ({
+                            ...current,
+                            estado: event.target.value,
+                            municipio: '',
+                          }))
+                        }
+                      >
+                        <option value="">Selecione</option>
+                        {BRAZIL_STATES.map((item) => (
+                          <option key={item.sigla} value={item.sigla}>
+                            {item.sigla} - {item.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="entidadeMunicipio">
+                        Municipio
+                      </label>
+                      <select
+                        id="entidadeMunicipio"
+                        className="field-input"
+                        value={entidadeForm.municipio}
+                        onChange={(event) =>
+                          setEntidadeForm((current) => ({ ...current, municipio: event.target.value }))
+                        }
+                        disabled={!entidadeForm.estado || isLoadingMunicipiosByEstado}
+                      >
+                        <option value="">
+                          {isLoadingMunicipiosByEstado
+                            ? 'Carregando municipios...'
+                            : entidadeForm.estado
+                              ? 'Selecione'
+                              : 'Selecione um estado primeiro'}
+                        </option>
+                        {municipiosDisponiveisComSelecionado.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
                           </option>
                         ))}
                       </select>
@@ -3397,6 +4089,14 @@ function App() {
                               <div>
                                 <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Contato</dt>
                                 <dd>{entry.contato || '--'}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Estado</dt>
+                                <dd>{entry.estado || '--'}</dd>
+                              </div>
+                              <div>
+                                <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Municipio</dt>
+                                <dd>{entry.municipio || '--'}</dd>
                               </div>
                               <div>
                                 <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Chave Pix</dt>
@@ -3896,171 +4596,435 @@ function App() {
 
           {activeMenu === 'relatorios' && (
             <section className="panel panel-soft space-y-5 sm:p-6">
-              <div className="report-controls grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:grid-cols-3">
-                <div className="sm:col-span-2">
-                  <label className="field-label" htmlFor="reportProcessoId">
-                    Processo para emissão
-                  </label>
-                  <input
-                    id="reportProcessoId"
-                    className="field-input"
-                    value={reportProcessoId}
-                    onChange={(event) => setReportProcessoId(event.target.value)}
-                    placeholder="Digite para pesquisar um processo"
-                    list="reportProcessoOptions"
-                  />
-                  <datalist id="reportProcessoOptions">
-                    {processosParaRelatorio.map((processoId) => (
-                      <option key={processoId} value={processoId}>
-                        {processoId}
-                      </option>
-                    ))}
-                  </datalist>
-                </div>
-
-                <div>
-                  <label className="field-label" htmlFor="reportDataEmissao">
-                    Data de emissão
-                  </label>
-                  <input
-                    id="reportDataEmissao"
-                    className="field-input"
-                    type="date"
-                    value={reportDataEmissao}
-                    onChange={(event) => setReportDataEmissao(event.target.value)}
-                  />
-                </div>
-
-                <div className="sm:col-span-3 flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm text-zinc-600">
-                    Relatório formal para instrução processual sobre existência de destinação social.
-                  </p>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-2">
+                <div className="flex flex-wrap gap-2">
                   <button
-                    className="btn-primary"
                     type="button"
-                    onClick={handleBaixarRelatorioPdf}
-                    disabled={isGeneratingPdf || !isProcessoRelatorioValido}
+                    className={activeReportTab === 'verificacao' ? 'tab tab-active' : 'tab'}
+                    onClick={() => setActiveReportTab('verificacao')}
                   >
-                    {isGeneratingPdf ? 'Gerando PDF...' : 'Baixar PDF'}
+                    Verificação por processo
                   </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className={activeReportTab === 'gerencial' ? 'tab tab-active' : 'tab'}
+                      onClick={() => setActiveReportTab('gerencial')}
+                    >
+                      Informações gerenciais
+                    </button>
+                  )}
                 </div>
               </div>
 
-              <div className="report-print-area">
-                <article
-                  ref={reportContentRef}
-                  className="report-a4 rounded-2xl border border-slate-200 bg-white text-zinc-900 shadow-sm"
-                >
-                  <header className="border-b border-zinc-300 pb-3 text-center">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
-                      Governo do Estado da Paraiba
-                    </p>
-                    <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
-                      Loteria do Estado da Paraíba
-                    </p>
-                    <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
-                      Assessoria de Políticas Públicas
-                    </p>
-                    <br />
-                    <br />
-                    <h2 className="mt-2 text-base font-semibold uppercase tracking-[0.08em] text-zinc-900">
-                      Relatório de Verificação de Destinação Social
-                    </h2>
-                  </header>
+              {!isAdmin && (
+                <p className="text-sm font-medium text-amber-700">
+                  O relatório gerencial de destinação de fomento é exclusivo para perfil ADMIN.
+                </p>
+              )}
 
-                  <section className="mt-6 space-y-4 text-justify text-[13.5px] leading-relaxed text-zinc-800">
-                    {!reportProcessoId && (
-                      <p>
-                        Selecione um processo para gerar o relatório institucional de verificação de destinação social.
+              {activeReportTab === 'verificacao' && (
+                <>
+                  <div className="report-controls grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:grid-cols-3">
+                    <div className="sm:col-span-2">
+                      <label className="field-label" htmlFor="reportProcessoId">
+                        Processo para emissão
+                      </label>
+                      <input
+                        id="reportProcessoId"
+                        className="field-input"
+                        value={reportProcessoId}
+                        onChange={(event) => setReportProcessoId(event.target.value)}
+                        placeholder="Digite para pesquisar um processo"
+                        list="reportProcessoOptions"
+                      />
+                      <datalist id="reportProcessoOptions">
+                        {processosParaRelatorio.map((processoId) => (
+                          <option key={processoId} value={processoId}>
+                            {processoId}
+                          </option>
+                        ))}
+                      </datalist>
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="reportDataEmissao">
+                        Data de emissão
+                      </label>
+                      <input
+                        id="reportDataEmissao"
+                        className="field-input"
+                        type="date"
+                        value={reportDataEmissao}
+                        onChange={(event) => setReportDataEmissao(event.target.value)}
+                      />
+                    </div>
+
+                    <div className="sm:col-span-3 flex flex-wrap items-center justify-between gap-3">
+                      <p className="text-sm text-zinc-600">
+                        Relatório formal para instrução processual sobre existência de destinação social.
                       </p>
-                    )}
+                      <button
+                        className="btn-primary"
+                        type="button"
+                        onClick={handleBaixarRelatorioPdf}
+                        disabled={isGeneratingPdf || !isProcessoRelatorioValido}
+                      >
+                        {isGeneratingPdf ? 'Gerando PDF...' : 'Baixar PDF'}
+                      </button>
+                    </div>
+                  </div>
 
-                    {reportProcessoId && (
-                      <>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-[12.5px] leading-relaxed text-zinc-700">
-                          <p>
-                            De acordo com a Instrução Normativa nº 001/2024, que regulamenta a modalidade passiva,
-                            os recursos correspondentes a <strong>7,5% da totalidade dos prêmios</strong> devem ser
-                            destinados ao fomento de ações e projetos nas áreas de Assistência, Desportos, Educação,
-                            Saúde e Desenvolvimento Social. Essas ações devem ser executadas pela empresa autorizada
-                            em parceria com a LOTEP. O Decreto nº 44.576/2023 também inclui a{' '}
-                            <strong>Segurança Pública</strong> entre as áreas contempladas.
-                          </p>
-                        </div>
-
-                        <p>
-                          Em atendimento à consulta formalizada nos autos do processo administrativo nº{' '}
-                          <strong>{reportProcessoId}</strong>, certifica-se a situação da destinação social a ele
-                          vinculada.
+                  <div className="report-print-area">
+                    <article
+                      ref={reportContentRef}
+                      className="report-a4 rounded-2xl border border-slate-200 bg-white text-zinc-900 shadow-sm"
+                    >
+                      <header className="border-b border-zinc-300 pb-3 text-center">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
+                          Governo do Estado da Paraiba
                         </p>
+                        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
+                          Loteria do Estado da Paraíba
+                        </p>
+                        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-zinc-600">
+                          Assessoria de Políticas Públicas
+                        </p>
+                        <br />
+                        <br />
+                        <h2 className="mt-2 text-base font-semibold uppercase tracking-[0.08em] text-zinc-900">
+                          Relatório de Verificação de Destinação Social
+                        </h2>
+                      </header>
 
-                        {destinacoesRelatorio.length > 0 ? (
-                          <>
-                            <p>
-                              Após análise dos registros institucionais disponíveis no sistema de controle de
-                              fomentos, <strong>constata-se que houve destinação social de recursos</strong> para o
-                              referido processo, no montante total de{' '}
-                              <strong>{formatCurrency(totalDestinadoRelatorio)}</strong>.
-                            </p>
-
-                            <p>
-                              As áreas contempladas pela destinação no processo são:{' '}
-                              <strong>{areasDestinacaoRelatorio.join('; ') || 'Área não identificada'}</strong>.
-                            </p>
-
-                            {statusPagamentoRelatorio === 'pago' && (
-                              <p>
-                                Quanto ao pagamento, verifica-se que o valor destinado encontra-se
-                                <strong> integralmente pago</strong>, no total de{' '}
-                                <strong>{formatCurrency(totalPagoRelatorio)}</strong>.
-                              </p>
-                            )}
-
-                            {statusPagamentoRelatorio === 'parcial' && (
-                              <p>
-                                Quanto ao pagamento, verifica-se quitação <strong>parcial</strong>, com total pago de{' '}
-                                <strong>{formatCurrency(totalPagoRelatorio)}</strong> e saldo pendente de{' '}
-                                <strong>{formatCurrency(saldoPagamentoRelatorio)}</strong>.
-                              </p>
-                            )}
-
-                            {statusPagamentoRelatorio === 'nao-pago' && (
-                              <p>
-                                Quanto ao pagamento, <strong>não há registro de quitação</strong> até a presente
-                                data.
-                              </p>
-                            )}
-                          </>
-                        ) : (
-                          <>
-                            <p>
-                              Após análise dos registros institucionais disponíveis no sistema de controle de
-                              fomentos, <strong>não foram localizadas destinações sociais registradas</strong> para o
-                              processo informado até a presente data.
-                            </p>
-                            <p>
-                              O presente relatório é emitido para fins de instrução processual, com vistas à
-                              comprovação formal da inexistência de destinação social registrada no âmbito do processo
-                              em epígrafe.
-                            </p>
-                          </>
+                      <section className="mt-6 space-y-4 text-justify text-[13.5px] leading-relaxed text-zinc-800">
+                        {!reportProcessoId && (
+                          <p>
+                            Selecione um processo para gerar o relatório institucional de verificação de destinação social.
+                          </p>
                         )}
 
-                        <p>João Pessoa, {dataEmissaoRelatorioExtenso}.</p>
-                      </>
-                    )}
-                  </section>
+                        {reportProcessoId && (
+                          <>
+                            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 text-[12.5px] leading-relaxed text-zinc-700">
+                              <p>
+                                De acordo com a Instrução Normativa nº 001/2024, que regulamenta a modalidade passiva,
+                                os recursos correspondentes a <strong>7,5% da totalidade dos prêmios</strong> devem ser
+                                destinados ao fomento de ações e projetos nas áreas de Assistência, Desportos, Educação,
+                                Saúde e Desenvolvimento Social. Essas ações devem ser executadas pela empresa autorizada
+                                em parceria com a LOTEP. O Decreto nº 44.576/2023 também inclui a{' '}
+                                <strong>Segurança Pública</strong> entre as áreas contempladas.
+                              </p>
+                            </div>
 
-                  <footer className="mt-16 text-center">
-                    <p className="mt-10 text-sm font-semibold uppercase tracking-[0.06em] text-zinc-900">
-                      {usuarioAssinaturaRelatorio}
-                    </p>
-                    <p className="mt-2 text-xs font-semibold uppercase tracking-[0.06em] text-zinc-600">
-                      {userProfile?.cargo || 'CARGO/FUNCAO'}
-                    </p>
-                  </footer>
-                </article>
-              </div>
+                            <p>
+                              Em atendimento à consulta formalizada nos autos do processo administrativo nº{' '}
+                              <strong>{reportProcessoId}</strong>, certifica-se a situação da destinação social a ele
+                              vinculada.
+                            </p>
+
+                            {destinacoesRelatorio.length > 0 ? (
+                              <>
+                                <p>
+                                  Após análise dos registros institucionais disponíveis no sistema de controle de
+                                  fomentos, <strong>constata-se que houve destinação social de recursos</strong> para o
+                                  referido processo, no montante total de{' '}
+                                  <strong>{formatCurrency(totalDestinadoRelatorio)}</strong>.
+                                </p>
+
+                                <p>
+                                  As áreas contempladas pela destinação no processo são:{' '}
+                                  <strong>{areasDestinacaoRelatorio.join('; ') || 'Área não identificada'}</strong>.
+                                </p>
+
+                                {statusPagamentoRelatorio === 'pago' && (
+                                  <p>
+                                    Quanto ao pagamento, verifica-se que o valor destinado encontra-se
+                                    <strong> integralmente pago</strong>, no total de{' '}
+                                    <strong>{formatCurrency(totalPagoRelatorio)}</strong>.
+                                  </p>
+                                )}
+
+                                {statusPagamentoRelatorio === 'parcial' && (
+                                  <p>
+                                    Quanto ao pagamento, verifica-se quitação <strong>parcial</strong>, com total pago de{' '}
+                                    <strong>{formatCurrency(totalPagoRelatorio)}</strong> e saldo pendente de{' '}
+                                    <strong>{formatCurrency(saldoPagamentoRelatorio)}</strong>.
+                                  </p>
+                                )}
+
+                                {statusPagamentoRelatorio === 'nao-pago' && (
+                                  <p>
+                                    Quanto ao pagamento, <strong>não há registro de quitação</strong> até a presente
+                                    data.
+                                  </p>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <p>
+                                  Após análise dos registros institucionais disponíveis no sistema de controle de
+                                  fomentos, <strong>não foram localizadas destinações sociais registradas</strong> para o
+                                  processo informado até a presente data.
+                                </p>
+                                <p>
+                                  O presente relatório é emitido para fins de instrução processual, com vistas à
+                                  comprovação formal da inexistência de destinação social registrada no âmbito do processo
+                                  em epígrafe.
+                                </p>
+                              </>
+                            )}
+
+                            <p>João Pessoa, {dataEmissaoRelatorioExtenso}.</p>
+                          </>
+                        )}
+                      </section>
+
+                      <footer className="mt-16 text-center">
+                        <p className="mt-10 text-sm font-semibold uppercase tracking-[0.06em] text-zinc-900">
+                          {usuarioAssinaturaRelatorio}
+                        </p>
+                        <p className="mt-2 text-xs font-semibold uppercase tracking-[0.06em] text-zinc-600">
+                          {userProfile?.cargo || 'CARGO/FUNCAO'}
+                        </p>
+                      </footer>
+                    </article>
+                  </div>
+                </>
+              )}
+
+              {isAdmin && activeReportTab === 'gerencial' && (
+                <>
+                  <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:grid-cols-2 lg:grid-cols-5">
+                    <div>
+                      <label className="field-label" htmlFor="gerencialAno">
+                        Ano
+                      </label>
+                      <select
+                        id="gerencialAno"
+                        className="field-input"
+                        value={reportGerencialAno}
+                        onChange={(event) => setReportGerencialAno(event.target.value)}
+                      >
+                        <option value="todos">Todos</option>
+                        {anosGerencialOptions.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="gerencialCompetencia">
+                        Competência
+                      </label>
+                      <select
+                        id="gerencialCompetencia"
+                        className="field-input"
+                        value={reportGerencialCompetencia}
+                        onChange={(event) => setReportGerencialCompetencia(event.target.value)}
+                      >
+                        <option value="todos">Todas</option>
+                        {competenciasGerencialOptions.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="gerencialDestino">
+                        Destino
+                      </label>
+                      <select
+                        id="gerencialDestino"
+                        className="field-input"
+                        value={reportGerencialDestino}
+                        onChange={(event) => setReportGerencialDestino(event.target.value)}
+                      >
+                        <option value="todos">Todos</option>
+                        {destinosGerencialOptions.map((item) => (
+                          <option key={item} value={item}>
+                            {item}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="gerencialEntidade">
+                        Entidade
+                      </label>
+                      <select
+                        id="gerencialEntidade"
+                        className="field-input"
+                        value={reportGerencialEntidadeId}
+                        onChange={(event) => setReportGerencialEntidadeId(event.target.value)}
+                      >
+                        <option value="todos">Todas</option>
+                        {entidadesGerencialOptions.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.nome}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="field-label" htmlFor="gerencialStatus">
+                        Status
+                      </label>
+                      <select
+                        id="gerencialStatus"
+                        className="field-input"
+                        value={reportGerencialStatus}
+                        onChange={(event) => setReportGerencialStatus(event.target.value)}
+                      >
+                        <option value="todos">Todos</option>
+                        {statusGerencialOptions.map((item) => (
+                          <option key={item} value={item}>
+                            {getStatusPagamentoLabel(item)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <article className="card-metric">
+                      <p>Total destinado</p>
+                      <strong>{formatCurrency(totalDestinadoGerencial)}</strong>
+                    </article>
+                    <article className="card-metric">
+                      <p>Destinações no filtro</p>
+                      <strong>{quantidadeDestinacoesGerencial}</strong>
+                    </article>
+                    <article className="card-metric">
+                      <p>Entidades atendidas</p>
+                      <strong>{totalEntidadesGerencial}</strong>
+                    </article>
+                    <article className="card-metric">
+                      <p>Municípios atendidos</p>
+                      <strong>{totalMunicipiosGerencial}</strong>
+                    </article>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={handleExportarGerencialPdf}
+                      disabled={isGeneratingGerencialPdf || !linhasDetalhadasGerencial.length}
+                    >
+                      {isGeneratingGerencialPdf ? 'Gerando PDF...' : 'Baixar PDF gerencial'}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={handleExportarGerencialCsv}
+                      disabled={isExportingGerencialCsv || !linhasDetalhadasGerencial.length}
+                    >
+                      {isExportingGerencialCsv ? 'Gerando CSV...' : 'Baixar CSV gerencial'}
+                    </button>
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-3">
+                    <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-zinc-600">Por ano</h3>
+                      <div className="mt-3 space-y-2 text-sm">
+                        {totaisPorAnoGerencial.length === 0 && <p className="text-zinc-500">Sem dados no filtro.</p>}
+                        {totaisPorAnoGerencial.map((item) => (
+                          <div key={item.ano} className="rounded-xl border border-slate-200 bg-slate-50/70 p-2">
+                            <p className="font-semibold text-zinc-900">{item.ano}</p>
+                            <p className="text-zinc-700">{formatCurrency(item.valor)}</p>
+                            <p className="text-zinc-500">{formatPercent(item.percentual)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+
+                    <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-zinc-600">
+                        Por categoria
+                      </h3>
+                      <div className="mt-3 space-y-2 text-sm">
+                        {totaisPorCategoriaGerencial.length === 0 && <p className="text-zinc-500">Sem dados no filtro.</p>}
+                        {totaisPorCategoriaGerencial.map((item) => (
+                          <div key={item.categoria} className="rounded-xl border border-slate-200 bg-slate-50/70 p-2">
+                            <p className="font-semibold text-zinc-900">{item.categoria}</p>
+                            <p className="text-zinc-700">{formatCurrency(item.valor)}</p>
+                            <p className="text-zinc-500">{formatPercent(item.percentual)}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+
+                    <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-zinc-600">
+                        Municípios atendidos
+                      </h3>
+                      <div className="mt-3 space-y-2 text-sm">
+                        {totaisPorMunicipioGerencial.length === 0 && <p className="text-zinc-500">Sem dados no filtro.</p>}
+                        {totaisPorMunicipioGerencial.map((item) => (
+                          <div key={`${item.municipio}-${item.estado}`} className="rounded-xl border border-slate-200 bg-slate-50/70 p-2">
+                            <p className="font-semibold text-zinc-900">
+                              {item.municipio}/{item.estado}
+                            </p>
+                            <p className="text-zinc-700">{formatCurrency(item.valor)}</p>
+                            <p className="text-zinc-500">Destinações: {item.quantidade}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </article>
+                  </div>
+
+                  <article className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <h3 className="text-sm font-semibold uppercase tracking-[0.08em] text-zinc-600">Detalhamento</h3>
+                    {linhasDetalhadasGerencial.length === 0 ? (
+                      <p className="mt-3 text-sm text-zinc-500">Nenhuma destinação encontrada para os filtros.</p>
+                    ) : (
+                      <div className="mt-3 overflow-x-auto">
+                        <table className="min-w-[1050px] divide-y divide-slate-200 text-left text-sm">
+                          <thead className="bg-slate-50 text-xs uppercase tracking-[0.08em] text-zinc-600">
+                            <tr>
+                              <th className="px-3 py-2">Data</th>
+                              <th className="px-3 py-2">Competência</th>
+                              <th className="px-3 py-2">Ano</th>
+                              <th className="px-3 py-2">Processo</th>
+                              <th className="px-3 py-2">Destino</th>
+                              <th className="px-3 py-2">Entidade</th>
+                              <th className="px-3 py-2">Categoria</th>
+                              <th className="px-3 py-2">Município</th>
+                              <th className="px-3 py-2">UF</th>
+                              <th className="px-3 py-2">Status</th>
+                              <th className="px-3 py-2 text-right">Valor</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-zinc-700">
+                            {linhasDetalhadasGerencial.map((item) => (
+                              <tr key={item.id || `${item.processoId}-${item.solicitacaoData}-${item.valorCents}`}>
+                                <td className="px-3 py-2">{formatDateBR(item.solicitacaoData)}</td>
+                                <td className="px-3 py-2">{item.competencia || '--/----'}</td>
+                                <td className="px-3 py-2">{item.ano}</td>
+                                <td className="px-3 py-2">{item.processoId || '--'}</td>
+                                <td className="px-3 py-2">{item.destino || 'Não informado'}</td>
+                                <td className="px-3 py-2">{item.entidade || 'Não informada'}</td>
+                                <td className="px-3 py-2">{item.categoria}</td>
+                                <td className="px-3 py-2">{item.municipio}</td>
+                                <td className="px-3 py-2">{item.estado}</td>
+                                <td className="px-3 py-2">{getStatusPagamentoLabel(item.status)}</td>
+                                <td className="px-3 py-2 text-right font-medium">{formatCurrency(item.valor)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </article>
+                </>
+              )}
             </section>
           )}
         </section>
@@ -4095,21 +5059,6 @@ function App() {
               }
             >
               <div>
-                <label className="field-label" htmlFor="modalEntidadeNome">
-                  Nome da entidade
-                </label>
-                <input
-                  id="modalEntidadeNome"
-                  className="field-input"
-                  value={entidadeForm.nome}
-                  onChange={(event) =>
-                    setEntidadeForm((current) => ({ ...current, nome: event.target.value }))
-                  }
-                  autoFocus
-                />
-              </div>
-
-              <div>
                 <label className="field-label" htmlFor="modalEntidadeCnpj">
                   CNPJ
                 </label>
@@ -4120,7 +5069,30 @@ function App() {
                   onChange={(event) =>
                     setEntidadeForm((current) => ({ ...current, cnpj: maskCNPJ(event.target.value) }))
                   }
+                  onBlur={(event) => {
+                    handleConsultarDadosCnpjEntidade(event.target.value)
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      event.currentTarget.blur()
+                    }
+                  }}
                   placeholder="00.000.000/0000-00"
+                />
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="modalEntidadeNome">
+                  Nome da entidade
+                </label>
+                <input
+                  id="modalEntidadeNome"
+                  className="field-input"
+                  value={entidadeForm.nome}
+                  onChange={(event) =>
+                    setEntidadeForm((current) => ({ ...current, nome: event.target.value }))
+                  }
                 />
               </div>
 
@@ -4169,6 +5141,59 @@ function App() {
                   {categoriaOptions.map((item) => (
                     <option key={item.value} value={item.value}>
                       {item.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="modalEstadoEntidade">
+                  Estado
+                </label>
+                <select
+                  id="modalEstadoEntidade"
+                  className="field-input"
+                  value={entidadeForm.estado}
+                  onChange={(event) =>
+                    setEntidadeForm((current) => ({
+                      ...current,
+                      estado: event.target.value,
+                      municipio: '',
+                    }))
+                  }
+                >
+                  <option value="">Selecione</option>
+                  {BRAZIL_STATES.map((item) => (
+                    <option key={item.sigla} value={item.sigla}>
+                      {item.sigla} - {item.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="modalMunicipioEntidade">
+                  Municipio
+                </label>
+                <select
+                  id="modalMunicipioEntidade"
+                  className="field-input"
+                  value={entidadeForm.municipio}
+                  onChange={(event) =>
+                    setEntidadeForm((current) => ({ ...current, municipio: event.target.value }))
+                  }
+                  disabled={!entidadeForm.estado || isLoadingMunicipiosByEstado}
+                >
+                  <option value="">
+                    {isLoadingMunicipiosByEstado
+                      ? 'Carregando municipios...'
+                      : entidadeForm.estado
+                        ? 'Selecione'
+                        : 'Selecione um estado primeiro'}
+                  </option>
+                  {municipiosDisponiveisComSelecionado.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
                     </option>
                   ))}
                 </select>
