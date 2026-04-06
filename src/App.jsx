@@ -2513,6 +2513,7 @@ function App() {
     event.preventDefault()
 
     const { closeModalOnSuccess = false, selectOnDestinacao = false } = options
+    const timestamp = new Date().toISOString()
 
     if (!user) {
       toast.error('Autenticação obrigatória para cadastrar entidade.')
@@ -2582,18 +2583,29 @@ function App() {
         chavePix,
         dadosBancarios,
         descricaoCategoria: categoriaDescriptions[entidadeForm.categoria] || '',
-        updatedAt: new Date().toISOString(),
+        updatedAt: timestamp,
         updatedBy: user.uid,
       }
 
       let createdEntidade = null
 
       if (editingEntidadeId) {
-        await updateEntidade(editingEntidadeId, basePayload)
+        const entidadeAtual = entidades.find((entry) => entry.id === editingEntidadeId)
+        const updatePayload = { ...basePayload }
+
+        if (!String(entidadeAtual?.createdBy || '').trim()) {
+          updatePayload.createdBy = user.uid
+        }
+
+        if (!String(entidadeAtual?.createdAt || '').trim()) {
+          updatePayload.createdAt = timestamp
+        }
+
+        await updateEntidade(editingEntidadeId, updatePayload)
       } else {
         createdEntidade = await createEntidade({
           ...basePayload,
-          createdAt: new Date().toISOString(),
+          createdAt: timestamp,
           createdBy: user.uid,
         })
       }
@@ -4378,182 +4390,186 @@ function App() {
                       <h3 className="text-base font-semibold text-zinc-900">
                         {editingEntidadeId ? 'Editar entidade' : 'Nova entidade'}
                       </h3>
-                    <div>
-                      <label className="field-label" htmlFor="entidadeCnpj">
-                        CNPJ
-                      </label>
-                      <input
-                        id="entidadeCnpj"
-                        className="field-input"
-                        value={entidadeForm.cnpj}
-                        onChange={(event) =>
-                          setEntidadeForm((current) => ({ ...current, cnpj: maskCNPJ(event.target.value) }))
-                        }
-                        onBlur={(event) => {
-                          handleConsultarDadosCnpjEntidade(event.target.value)
-                        }}
-                        onKeyDown={(event) => {
-                          if (event.key === 'Enter') {
-                            event.preventDefault()
-                            event.currentTarget.blur()
-                          }
-                        }}
-                        placeholder="00.000.000/0000-00"
-                      />
-                    </div>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                        <div>
+                          <label className="field-label" htmlFor="entidadeCnpj">
+                            CNPJ
+                          </label>
+                          <input
+                            id="entidadeCnpj"
+                            className="field-input"
+                            value={entidadeForm.cnpj}
+                            onChange={(event) =>
+                              setEntidadeForm((current) => ({ ...current, cnpj: maskCNPJ(event.target.value) }))
+                            }
+                            onBlur={(event) => {
+                              handleConsultarDadosCnpjEntidade(event.target.value)
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault()
+                                event.currentTarget.blur()
+                              }
+                            }}
+                            placeholder="00.000.000/0000-00"
+                          />
+                        </div>
 
-                    <div>
-                      <label className="field-label" htmlFor="entidadeNome">
-                        Nome da entidade
-                      </label>
-                      <input
-                        id="entidadeNome"
-                        className="field-input"
-                        value={entidadeForm.nome}
-                        onChange={(event) =>
-                          setEntidadeForm((current) => ({ ...current, nome: event.target.value }))
-                        }
-                      />
-                    </div>
+                        <div>
+                          <label className="field-label" htmlFor="entidadeNome">
+                            Nome da entidade
+                          </label>
+                          <input
+                            id="entidadeNome"
+                            className="field-input"
+                            value={entidadeForm.nome}
+                            onChange={(event) =>
+                              setEntidadeForm((current) => ({ ...current, nome: event.target.value }))
+                            }
+                          />
+                        </div>
 
-                    <div>
-                      <label className="field-label" htmlFor="entidadeResponsavel">
-                        Nome do responsável
-                      </label>
-                      <input
-                        id="entidadeResponsavel"
-                        className="field-input"
-                        value={entidadeForm.responsavel}
-                        onChange={(event) =>
-                          setEntidadeForm((current) => ({ ...current, responsavel: event.target.value }))
-                        }
-                        placeholder="Nome completo"
-                      />
-                    </div>
+                        <div>
+                          <label className="field-label" htmlFor="entidadeResponsavel">
+                            Nome do responsável
+                          </label>
+                          <input
+                            id="entidadeResponsavel"
+                            className="field-input"
+                            value={entidadeForm.responsavel}
+                            onChange={(event) =>
+                              setEntidadeForm((current) => ({ ...current, responsavel: event.target.value }))
+                            }
+                            placeholder="Nome completo"
+                          />
+                        </div>
 
-                    <div>
-                      <label className="field-label" htmlFor="entidadeContato">
-                        Contato
-                      </label>
-                      <input
-                        id="entidadeContato"
-                        className="field-input"
-                        value={entidadeForm.contato}
-                        onChange={(event) =>
-                          setEntidadeForm((current) => ({ ...current, contato: event.target.value }))
-                        }
-                        placeholder="Telefone, e-mail ou ambos"
-                      />
-                    </div>
+                        <div>
+                          <label className="field-label" htmlFor="entidadeContato">
+                            Contato
+                          </label>
+                          <input
+                            id="entidadeContato"
+                            className="field-input"
+                            value={entidadeForm.contato}
+                            onChange={(event) =>
+                              setEntidadeForm((current) => ({ ...current, contato: event.target.value }))
+                            }
+                            placeholder="Telefone, e-mail ou ambos"
+                          />
+                        </div>
 
-                    <div>
-                      <label className="field-label" htmlFor="categoria">
-                        Categoria
-                      </label>
-                      <select
-                        id="categoria"
-                        className="field-input"
-                        value={entidadeForm.categoria}
-                        onChange={(event) =>
-                          setEntidadeForm((current) => ({ ...current, categoria: event.target.value }))
-                        }
-                      >
-                        {categoriaOptions.map((item) => (
-                          <option key={item.value} value={item.value}>
-                            {item.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        <div>
+                          <label className="field-label" htmlFor="categoria">
+                            Categoria
+                          </label>
+                          <select
+                            id="categoria"
+                            className="field-input"
+                            value={entidadeForm.categoria}
+                            onChange={(event) =>
+                              setEntidadeForm((current) => ({ ...current, categoria: event.target.value }))
+                            }
+                          >
+                            {categoriaOptions.map((item) => (
+                              <option key={item.value} value={item.value}>
+                                {item.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                    <div>
-                      <label className="field-label" htmlFor="entidadeEstado">
-                        Estado
-                      </label>
-                      <select
-                        id="entidadeEstado"
-                        className="field-input"
-                        value={entidadeForm.estado}
-                        onChange={(event) =>
-                          setEntidadeForm((current) => ({
-                            ...current,
-                            estado: event.target.value,
-                            municipio: '',
-                          }))
-                        }
-                      >
-                        <option value="">Selecione</option>
-                        {BRAZIL_STATES.map((item) => (
-                          <option key={item.sigla} value={item.sigla}>
-                            {item.sigla} - {item.nome}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        <div>
+                          <label className="field-label" htmlFor="entidadeEstado">
+                            Estado
+                          </label>
+                          <select
+                            id="entidadeEstado"
+                            className="field-input"
+                            value={entidadeForm.estado}
+                            onChange={(event) =>
+                              setEntidadeForm((current) => ({
+                                ...current,
+                                estado: event.target.value,
+                                municipio: '',
+                              }))
+                            }
+                          >
+                            <option value="">Selecione</option>
+                            {BRAZIL_STATES.map((item) => (
+                              <option key={item.sigla} value={item.sigla}>
+                                {item.sigla} - {item.nome}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                    <div>
-                      <label className="field-label" htmlFor="entidadeMunicipio">
-                        Municipio
-                      </label>
-                      <select
-                        id="entidadeMunicipio"
-                        className="field-input"
-                        value={entidadeForm.municipio}
-                        onChange={(event) =>
-                          setEntidadeForm((current) => ({ ...current, municipio: event.target.value }))
-                        }
-                        disabled={!entidadeForm.estado || isLoadingMunicipiosByEstado}
-                      >
-                        <option value="">
-                          {isLoadingMunicipiosByEstado
-                            ? 'Carregando municipios...'
-                            : entidadeForm.estado
-                              ? 'Selecione'
-                              : 'Selecione um estado primeiro'}
-                        </option>
-                        {municipiosDisponiveisComSelecionado.map((item) => (
-                          <option key={item} value={item}>
-                            {item}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        <div>
+                          <label className="field-label" htmlFor="entidadeMunicipio">
+                            Municipio
+                          </label>
+                          <select
+                            id="entidadeMunicipio"
+                            className="field-input"
+                            value={entidadeForm.municipio}
+                            onChange={(event) =>
+                              setEntidadeForm((current) => ({ ...current, municipio: event.target.value }))
+                            }
+                            disabled={!entidadeForm.estado || isLoadingMunicipiosByEstado}
+                          >
+                            <option value="">
+                              {isLoadingMunicipiosByEstado
+                                ? 'Carregando municipios...'
+                                : entidadeForm.estado
+                                  ? 'Selecione'
+                                  : 'Selecione um estado primeiro'}
+                            </option>
+                            {municipiosDisponiveisComSelecionado.map((item) => (
+                              <option key={item} value={item}>
+                                {item}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                    <div>
-                      <label className="field-label" htmlFor="entidadeChavePix">
-                        Chave Pix
-                      </label>
-                      <input
-                        id="entidadeChavePix"
-                        className="field-input"
-                        value={entidadeForm.chavePix}
-                        onChange={(event) =>
-                          setEntidadeForm((current) => ({ ...current, chavePix: event.target.value }))
-                        }
-                        placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória"
-                      />
-                    </div>
+                        <div>
+                          <label className="field-label" htmlFor="entidadeChavePix">
+                            Chave Pix
+                          </label>
+                          <input
+                            id="entidadeChavePix"
+                            className="field-input"
+                            value={entidadeForm.chavePix}
+                            onChange={(event) =>
+                              setEntidadeForm((current) => ({ ...current, chavePix: event.target.value }))
+                            }
+                            placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória"
+                          />
+                        </div>
 
-                    <div>
-                      <label className="field-label" htmlFor="entidadeDadosBancarios">
-                        Dados bancários para transferência
-                      </label>
-                      <textarea
-                        id="entidadeDadosBancarios"
-                        className="field-input min-h-24"
-                        value={entidadeForm.dadosBancarios}
-                        onChange={(event) =>
-                          setEntidadeForm((current) => ({ ...current, dadosBancarios: event.target.value }))
-                        }
-                        placeholder="Banco, agência, conta e tipo"
-                      />
-                    </div>
+                        <div className="md:col-span-2 xl:col-span-3">
+                          <label className="field-label" htmlFor="entidadeDadosBancarios">
+                            Dados bancários para transferência
+                          </label>
+                          <textarea
+                            id="entidadeDadosBancarios"
+                            className="field-input min-h-24"
+                            value={entidadeForm.dadosBancarios}
+                            onChange={(event) =>
+                              setEntidadeForm((current) => ({ ...current, dadosBancarios: event.target.value }))
+                            }
+                            placeholder="Banco, agência, conta e tipo"
+                          />
+                        </div>
 
-                    <p className="text-xs text-zinc-500">Obrigatório informar CNPJ e ao menos Pix ou dados bancários.</p>
+                        <p className="text-xs text-zinc-500 md:col-span-2 xl:col-span-3">
+                          Obrigatório informar CNPJ e ao menos Pix ou dados bancários.
+                        </p>
 
-                    <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900">
-                      {categoriaTexto}
-                    </div>
+                        <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 md:col-span-2 xl:col-span-3">
+                          {categoriaTexto}
+                        </div>
+                      </div>
 
                     <div className="flex flex-wrap gap-2">
                       <button className="btn-primary flex-1" type="submit">

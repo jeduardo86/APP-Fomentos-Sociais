@@ -55,6 +55,14 @@ service cloud.firestore {
         && request.resource.data.updatedBy == request.auth.uid;
     }
 
+    function validLegacyEntidadeUpdateOwnership() {
+      return (!('createdBy' in resource.data)
+          || !(resource.data.createdBy is string)
+          || resource.data.createdBy.size() == 0)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.updatedBy == request.auth.uid;
+    }
+
     function validDestinacaoCreate() {
       return request.resource.data.processoId is string
         && request.resource.data.processoId.size() > 0
@@ -114,7 +122,7 @@ service cloud.firestore {
     match /entidades/{document=**} {
       allow read: if isAccessEnabled();
       allow create: if isAccessEnabled() && validCreateOwnership();
-      allow update: if isAccessEnabled() && (validUpdateOwnership() || isAdmin());
+      allow update: if isAccessEnabled() && (validUpdateOwnership() || validLegacyEntidadeUpdateOwnership() || isAdmin());
       allow delete: if false;
     }
 
