@@ -143,6 +143,52 @@ export async function syncBaseCsv(records, userId) {
   await batch.commit()
 }
 
+export async function createManualResourceSource(payload, userId) {
+  const processoId = String(payload?.processoId || '').trim()
+  const empresa = String(payload?.empresa || '').trim()
+  const tipoFomento = String(payload?.tipoFomento || '').trim() || 'Instantâneas'
+  const valorFomentoCents = toMoneyCents(payload?.valorFomento)
+
+  if (!processoId) {
+    throw new Error('Informe um identificador de processo para a origem manual.')
+  }
+
+  if (!empresa) {
+    throw new Error('Selecione uma empresa válida para a origem manual.')
+  }
+
+  if (valorFomentoCents <= 0) {
+    throw new Error('Informe um valor de fomento maior que zero.')
+  }
+
+  const ref = doc(db, 'base_csv', toSafeDocId(processoId))
+  const snapshot = await getDoc(ref)
+
+  if (snapshot.exists()) {
+    throw new Error('Já existe um processo com este identificador na base. Use outro código.')
+  }
+
+  const now = new Date().toISOString()
+
+  await setDoc(ref, {
+    processoId,
+    termo: tipoFomento,
+    tipoFomento,
+    cnpj: String(payload?.cnpj || '').trim(),
+    empresa,
+    produto: String(payload?.produto || tipoFomento).trim() || tipoFomento,
+    valorPremio: 0,
+    incentivo: 0,
+    valorFomento: fromMoneyCents(valorFomentoCents),
+    origemTipo: 'manual',
+    syncedAt: now,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: userId || '',
+    updatedBy: userId || '',
+  })
+}
+
 export async function createDestinacao(payload) {
   const processoId = String(payload?.processoId || '').trim()
   const valorDestinadoCents = toMoneyCents(payload?.valorDestinado)

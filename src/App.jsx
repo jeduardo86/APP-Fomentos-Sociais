@@ -12,7 +12,7 @@ import {
   toCompetenciaMask,
 } from './lib/formatters'
 import { BRAZIL_STATES, fetchMunicipiosByEstado, sortMunicipiosByCapitalFirst } from './lib/brazilLocations'
-import { fetchAndParseCsv } from './services/csvService'
+import { fetchAndParseCsv, validateCsvSourceInput } from './services/csvService'
 import { fetchEntidadeByCnpj } from './services/cnpjService'
 import {
   createUserByAdmin,
@@ -23,6 +23,7 @@ import {
 } from './services/authService'
 import {
   collections,
+  createManualResourceSource,
   createUserProfileByAdmin,
   createDestinacao,
   deleteDestinacao,
@@ -55,6 +56,8 @@ const cadastroTabs = [
   { id: 'entidades', label: 'Cadastro de entidades' },
   { id: 'usuarios', label: 'Cadastro de usuários' },
 ]
+
+const tipoFomentoOptions = ['Instantâneas', 'Semanais (PP)', 'Passiva']
 
 const FONT_SIZE_STORAGE_KEY = 'app-fomentos-font-size'
 
@@ -126,6 +129,14 @@ function competenciaFromDate(isoDate) {
 
   const [year, month] = isoDate.split('-')
   return `${month}/${year}`
+}
+
+function generateManualProcessId() {
+  const now = new Date()
+  const year = String(now.getFullYear())
+  const random = String(Math.floor(Math.random() * 100000)).padStart(5, '0')
+
+  return `LTP-MAN-${year}/${random}`
 }
 
 function toMoneyCents(value) {
@@ -330,6 +341,13 @@ function App() {
 
   const [empresaForm, setEmpresaForm] = useState({ razaoSocial: '', cnpj: '' })
   const [isEmpresaFormVisible, setIsEmpresaFormVisible] = useState(false)
+  const [origemManualForm, setOrigemManualForm] = useState({
+    empresaId: '',
+    valorFomento: 0,
+    processoId: '',
+    tipoFomento: 'Instantâneas',
+  })
+  const [isOrigemManualModalOpen, setIsOrigemManualModalOpen] = useState(false)
   const [entidadeForm, setEntidadeForm] = useState(createInitialEntidadeForm())
   const [isEntidadeFormVisible, setIsEntidadeFormVisible] = useState(false)
   const [editingEntidadeId, setEditingEntidadeId] = useState('')
@@ -367,6 +385,7 @@ function App() {
   const reportContentRef = useRef(null)
   const isLoadingMunicipiosRef = useRef(false)
   const lastCnpjLookupRef = useRef('')
+  const autoSyncedCsvKeysRef = useRef(new Set())
   const canAccessCadastroBase = Boolean(user && userProfile && userProfile?.blocked !== true)
   const visibleCadastroTabs = isAdmin
     ? cadastroTabs
@@ -417,6 +436,7 @@ function App() {
       setEntidades([])
       setEmpresas([])
       setCsvUrl('')
+      autoSyncedCsvKeysRef.current.clear()
       return undefined
     }
 
@@ -508,6 +528,56 @@ function App() {
     const stopUsers = subscribeUsers(setUsersList, handleRealtimeAccessError)
     return () => stopUsers()
   }, [user, isAdmin, userProfile])
+
+  useEffect(() => {
+    if (!user || !isAdmin || userProfile?.blocked === true) {
+      return
+    }
+
+    const validation = validateCsvSourceInput(csvUrl)
+
+    if (!validation.isValid || !validation.normalizedUrl) {
+      return
+    }
+
+    const syncKey = `${user.uid}|${validation.normalizedUrl}`
+
+    if (autoSyncedCsvKeysRef.current.has(syncKey)) {
+      return
+    }
+
+    autoSyncedCsvKeysRef.current.add(syncKey)
+
+    let cancelled = false
+
+    ;(async () => {
+      try {
+        const records = await fetchAndParseCsv(validation.normalizedUrl)
+
+        if (!records.length) {
+          throw new Error('CSV sem registros válidos.')
+        }
+
+        await syncBaseCsv(records, user.uid)
+
+        if (!cancelled) {
+          toast.success(`Sincronização automática concluída: ${records.length} processos.`, {
+            id: 'auto-csv-sync-success',
+          })
+        }
+      } catch (error) {
+        if (!cancelled) {
+          toast.error(error?.message || 'Não foi possível sincronizar automaticamente a base CSV.', {
+            id: 'auto-csv-sync-error',
+          })
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [user, userProfile, isAdmin, csvUrl])
 
   const totalDestinadoPorProcesso = useMemo(() => {
     return destinacoes.reduce((acc, item) => {
@@ -1533,6 +1603,19 @@ function App() {
 
   const categoriaTexto = categoriaDescriptions[entidadeForm.categoria] || ''
 
+  const empresasCadastroOptions = useMemo(
+    () =>
+      empresas
+        .map((item) => ({
+          id: String(item.id || '').trim(),
+          razaoSocial: String(item.razaoSocial || '').trim(),
+          cnpj: String(item.cnpj || '').trim(),
+        }))
+        .filter((item) => item.id && item.razaoSocial)
+        .sort((a, b) => a.razaoSocial.localeCompare(b.razaoSocial)),
+    [empresas],
+  )
+
   function handleSelectMobileMenu(nextMenu) {
     setActiveMenu(nextMenu)
     setIsMobileMenuOpen(false)
@@ -1836,19 +1919,20 @@ function App() {
   }
 
   useEffect(() => {
-    if (!isEntidadeModalOpen) {
+    if (!isEntidadeModalOpen && !isOrigemManualModalOpen) {
       return undefined
     }
 
     function handleEscapeClose(event) {
       if (event.key === 'Escape') {
         setIsEntidadeModalOpen(false)
+        setIsOrigemManualModalOpen(false)
       }
     }
 
     window.addEventListener('keydown', handleEscapeClose)
     return () => window.removeEventListener('keydown', handleEscapeClose)
-  }, [isEntidadeModalOpen])
+  }, [isEntidadeModalOpen, isOrigemManualModalOpen])
 
   useEffect(() => {
     if (isLoadingMunicipiosRef.current) {
@@ -1883,15 +1967,17 @@ function App() {
       return
     }
 
-    if (!csvUrl.trim()) {
-      toast.error('Informe a URL do CSV para sincronizar.')
+    const csvInputValidation = validateCsvSourceInput(csvUrl)
+
+    if (!csvInputValidation.isValid) {
+      toast.error(csvInputValidation.message || 'Informe a URL do CSV para sincronizar.')
       return
     }
 
     setIsSyncing(true)
 
     try {
-      const records = await fetchAndParseCsv(csvUrl)
+      const records = await fetchAndParseCsv(csvInputValidation.normalizedUrl)
       if (!records.length) {
         throw new Error('CSV sem registros válidos.')
       }
@@ -1913,16 +1999,19 @@ function App() {
       return
     }
 
-    if (!csvUrl.trim()) {
-      toast.error('Informe o link do CSV.')
+    const csvInputValidation = validateCsvSourceInput(csvUrl)
+
+    if (!csvInputValidation.isValid) {
+      toast.error(csvInputValidation.message || 'Informe o link da planilha ou do CSV.')
       return
     }
 
     setIsSavingCsvLink(true)
 
     try {
-      await saveCsvLinkConfig(csvUrl.trim(), user.uid)
-      toast.success('Link do CSV salvo com sucesso.')
+      await saveCsvLinkConfig(csvInputValidation.normalizedUrl, user.uid)
+      setCsvUrl(csvInputValidation.normalizedUrl)
+      toast.success('Link salvo com sucesso.')
     } catch {
       toast.error('Não foi possível salvar o link do CSV.')
     } finally {
@@ -2159,6 +2248,81 @@ function App() {
       )
     } catch (error) {
       toast.error(error.message || 'Falha ao salvar a destinação.')
+    }
+  }
+
+  async function handleSalvarOrigemManual(event) {
+    event.preventDefault()
+
+    if (!user || !isAdmin) {
+      toast.error('Apenas administradores podem cadastrar origem manual de recurso.')
+      return
+    }
+
+    const empresaSelecionadaCadastro = empresasCadastroOptions.find(
+      (item) => item.id === origemManualForm.empresaId,
+    )
+    const valorFomento = Number(origemManualForm.valorFomento || 0)
+    const processoIdDigitado = String(origemManualForm.processoId || '').trim().toUpperCase()
+    const processoId = processoIdDigitado || generateManualProcessId()
+
+    if (!empresaSelecionadaCadastro) {
+      toast.error('Selecione uma empresa cadastrada para a origem manual.')
+      return
+    }
+
+    if (valorFomento <= 0) {
+      toast.error('Informe um valor de fomento maior que zero.')
+      return
+    }
+
+    const processoDuplicado = baseCsv.some(
+      (item) => String(item?.processoId || '').trim().toUpperCase() === processoId,
+    )
+
+    if (processoDuplicado) {
+      toast.error('Já existe um processo com esse identificador. Informe outro código.')
+      return
+    }
+
+    const tipoFomento = tipoFomentoOptions.includes(origemManualForm.tipoFomento)
+      ? origemManualForm.tipoFomento
+      : 'Instantâneas'
+
+    try {
+      await createManualResourceSource(
+        {
+          processoId,
+          empresa: empresaSelecionadaCadastro.razaoSocial,
+          cnpj: empresaSelecionadaCadastro.cnpj,
+          produto: tipoFomento,
+          tipoFomento,
+          valorFomento,
+        },
+        user.uid,
+      )
+
+      const empresaKey = getEmpresaGroupKey(
+        empresaSelecionadaCadastro.cnpj,
+        empresaSelecionadaCadastro.razaoSocial,
+      )
+
+      setEmpresaSelecionada(empresaKey)
+      setSelectedProcessIds([])
+      setSelectedProcessValues({})
+      setValorAlvoDestinacao(0)
+      setFiltroProcessoDestinacao('')
+      setOrigemManualForm({
+        empresaId: '',
+        valorFomento: 0,
+        processoId: '',
+        tipoFomento: 'Instantâneas',
+      })
+      setIsOrigemManualModalOpen(false)
+
+      toast.success('Origem manual cadastrada. Ela já está disponível para destinação.')
+    } catch (error) {
+      toast.error(error?.message || 'Não foi possível cadastrar a origem manual de recurso.')
     }
   }
 
@@ -3107,6 +3271,26 @@ function App() {
               {activeTab === 'destinacao' && (
                 <section className="mt-5 space-y-5 animate-in">
                   <h2 className="text-lg font-semibold text-zinc-900">Formulário de destinação</h2>
+
+                  {isAdmin && (
+                    <div className="rounded-2xl border border-cyan-200/80 bg-cyan-50/40 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-cyan-900">Origem manual de recurso</p>
+                          <p className="text-xs text-cyan-800">
+                            Cadastre fomentos fora do CSV e siga no fluxo normal de destinações.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-primary"
+                          onClick={() => setIsOrigemManualModalOpen(true)}
+                        >
+                          Cadastrar Fomento
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <label className="field-label" htmlFor="empresaSelecionada">
@@ -5112,12 +5296,12 @@ function App() {
               <article className="panel panel-soft">
                 <h2 className="text-lg font-semibold text-zinc-900">Configuração do CSV</h2>
                 <p className="mt-1 text-sm text-zinc-600">
-                  Defina e salve o link público para sincronização da base.
+                  Salve o link da planilha do Google e o app monta automaticamente o link CSV de exportação.
                 </p>
 
                 <form className="mt-5 space-y-3" onSubmit={handleSalvarCsvLink}>
                   <label className="field-label" htmlFor="csvUrl">
-                    Link público do CSV
+                    Link da planilha (Google Sheets) ou CSV
                   </label>
                   <input
                     id="csvUrl"
@@ -5125,7 +5309,7 @@ function App() {
                     type="url"
                     value={csvUrl}
                     onChange={(event) => setCsvUrl(event.target.value)}
-                    placeholder="https://dominio.com/base.csv"
+                    placeholder="https://docs.google.com/spreadsheets/d/ID_DA_PLANILHA/edit"
                   />
                   <button className="btn-primary w-full" type="submit" disabled={isSavingCsvLink || !isAdmin}>
                     {isSavingCsvLink ? 'Salvando link...' : 'Salvar link do CSV'}
@@ -5605,6 +5789,141 @@ function App() {
           )}
         </section>
       </main>
+
+      {isOrigemManualModalOpen && (
+        <div
+          className="fixed inset-0 z-30 flex items-center justify-center bg-zinc-900/45 p-4 backdrop-blur-[1px]"
+          onClick={() => setIsOrigemManualModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-zinc-900">Cadastrar Fomento</h2>
+                <p className="mt-1 text-sm text-zinc-600">
+                  Informe o Operador Lotérico e o valor total disponível para incluir uma origem manual no fluxo.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
+                onClick={() => setIsOrigemManualModalOpen(false)}
+              >
+                Fechar
+              </button>
+            </div>
+
+            <form className="grid grid-cols-1 gap-4 sm:grid-cols-2" onSubmit={handleSalvarOrigemManual}>
+              <div className="sm:col-span-2">
+                <label className="field-label" htmlFor="origemManualEmpresa">
+                  Operador Lotérico cadastrada
+                </label>
+                <select
+                  id="origemManualEmpresa"
+                  className="field-input"
+                  value={origemManualForm.empresaId}
+                  onChange={(event) =>
+                    setOrigemManualForm((current) => ({
+                      ...current,
+                      empresaId: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Selecione</option>
+                  {empresasCadastroOptions.map((empresa) => (
+                    <option key={empresa.id} value={empresa.id}>
+                      {`${empresa.razaoSocial} | ${empresa.cnpj || 'CNPJ não informado'}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="origemManualValorFomento">
+                  FOMENTO DISPONÍVEL (R$)
+                </label>
+                <NumericFormat
+                  id="origemManualValorFomento"
+                  className="field-input"
+                  thousandSeparator="."
+                  decimalSeparator="," 
+                  prefix="R$ "
+                  decimalScale={2}
+                  fixedDecimalScale
+                  allowNegative={false}
+                  value={origemManualForm.valorFomento}
+                  onValueChange={(values) =>
+                    setOrigemManualForm((current) => ({
+                      ...current,
+                      valorFomento: Number(values.floatValue || 0),
+                    }))
+                  }
+                  placeholder="R$ 0,00"
+                />
+              </div>
+
+              <div>
+                <label className="field-label" htmlFor="origemManualTipoFomento">
+                  Tipo de Fomento
+                </label>
+                <select
+                  id="origemManualTipoFomento"
+                  className="field-input"
+                  value={origemManualForm.tipoFomento}
+                  onChange={(event) =>
+                    setOrigemManualForm((current) => ({
+                      ...current,
+                      tipoFomento: event.target.value,
+                    }))
+                  }
+                >
+                  {tipoFomentoOptions.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="field-label" htmlFor="origemManualProcessoId">
+                  Identificador do processo (opcional)
+                </label>
+                <input
+                  id="origemManualProcessoId"
+                  className="field-input"
+                  value={origemManualForm.processoId}
+                  onChange={(event) =>
+                    setOrigemManualForm((current) => ({
+                      ...current,
+                      processoId: event.target.value,
+                    }))
+                  }
+                  placeholder="Ex.: LTP-PRC-2026/00001"
+                />
+                <p className="mt-1 text-xs text-zinc-500">
+                  Se não informar, o sistema gera um identificador automático.
+                </p>
+              </div>
+
+              <div className="sm:col-span-2 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
+                  onClick={() => setIsOrigemManualModalOpen(false)}
+                >
+                  Cancelar
+                </button>
+                <button className="btn-primary" type="submit">
+                  Cadastrar Fomento
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {isEntidadeModalOpen && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-zinc-900/45 p-4">
