@@ -26,6 +26,7 @@ import {
   createManualResourceSource,
   createUserProfileByAdmin,
   createDestinacao,
+  deleteEmpresa,
   deleteDestinacao,
   createEmpresa,
   createEntidade,
@@ -38,6 +39,7 @@ import {
   subscribeUsers,
   syncBaseCsv,
   updateDestinacao,
+  updateEmpresa,
   updateEntidade,
   updateUserAccess,
   updateUserName,
@@ -157,6 +159,14 @@ function fromMoneyCents(cents) {
   }
 
   return parsed / 100
+}
+
+function handleMoneyInputFocus(event) {
+  if (typeof event?.target?.select !== 'function') {
+    return
+  }
+
+  event.target.select()
 }
 
 function getAnoFromCompetenciaOrDate(item) {
@@ -341,6 +351,7 @@ function App() {
 
   const [empresaForm, setEmpresaForm] = useState({ razaoSocial: '', cnpj: '' })
   const [isEmpresaFormVisible, setIsEmpresaFormVisible] = useState(false)
+  const [editingEmpresaId, setEditingEmpresaId] = useState('')
   const [origemManualForm, setOrigemManualForm] = useState({
     empresaId: '',
     valorFomento: 0,
@@ -1616,6 +1627,39 @@ function App() {
     [empresas],
   )
 
+  const empresasCadastroLista = useMemo(() => {
+    return empresasCadastroOptions.map((item) => {
+      const cnpjDigits = sanitizeCNPJ(item.cnpj)
+      const razaoSocialNormalizada = String(item.razaoSocial || '').trim().toLowerCase()
+
+      const processosAtrelados = baseCsv.filter((registro) => {
+        const registroCnpj = sanitizeCNPJ(registro?.cnpj)
+        const registroEmpresa = String(registro?.empresa || '').trim().toLowerCase()
+
+        if (cnpjDigits.length === 14) {
+          return registroCnpj === cnpjDigits
+        }
+
+        return Boolean(razaoSocialNormalizada) && registroEmpresa === razaoSocialNormalizada
+      }).length
+
+      const destinacoesAtreladas = destinacoes.filter((registro) => {
+        const registroEmpresa = String(registro?.empresa || '').trim().toLowerCase()
+        return Boolean(razaoSocialNormalizada) && registroEmpresa === razaoSocialNormalizada
+      }).length
+
+      const totalLancamentosAtrelados = processosAtrelados + destinacoesAtreladas
+
+      return {
+        ...item,
+        processosAtrelados,
+        destinacoesAtreladas,
+        totalLancamentosAtrelados,
+        canDelete: totalLancamentosAtrelados === 0,
+      }
+    })
+  }, [empresasCadastroOptions, baseCsv, destinacoes])
+
   function handleSelectMobileMenu(nextMenu) {
     setActiveMenu(nextMenu)
     setIsMobileMenuOpen(false)
@@ -2673,26 +2717,110 @@ function App() {
     }
 
     const cnpjLimpo = sanitizeCNPJ(empresaForm.cnpj)
+    const razaoSocialNormalizada = String(empresaForm.razaoSocial || '').trim().toLowerCase()
 
     if (!empresaForm.razaoSocial.trim() || cnpjLimpo.length !== 14) {
       toast.error('Informe razão social e CNPJ válido.')
       return
     }
 
+    const empresaDuplicada = empresasCadastroOptions.some((entry) => {
+      if (entry.id === editingEmpresaId) {
+        return false
+      }
+
+      const cnpjEntry = sanitizeCNPJ(entry.cnpj)
+      const razaoEntry = String(entry.razaoSocial || '').trim().toLowerCase()
+
+      return cnpjEntry === cnpjLimpo || razaoEntry === razaoSocialNormalizada
+    })
+
+    if (empresaDuplicada) {
+      toast.error('Já existe empresa cadastrada com o mesmo CNPJ ou razão social.')
+      return
+    }
+
     try {
-      await createEmpresa({
-        razaoSocial: empresaForm.razaoSocial.trim(),
-        cnpj: maskCNPJ(cnpjLimpo),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        createdBy: user.uid,
-        updatedBy: user.uid,
-      })
+      const timestamp = new Date().toISOString()
+
+      if (editingEmpresaId) {
+        await updateEmpresa(editingEmpresaId, {
+          razaoSocial: empresaForm.razaoSocial.trim(),
+          cnpj: maskCNPJ(cnpjLimpo),
+          updatedAt: timestamp,
+          updatedBy: user.uid,
+        })
+      } else {
+        await createEmpresa({
+          razaoSocial: empresaForm.razaoSocial.trim(),
+          cnpj: maskCNPJ(cnpjLimpo),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          createdBy: user.uid,
+          updatedBy: user.uid,
+        })
+      }
+
       setEmpresaForm({ razaoSocial: '', cnpj: '' })
+      setEditingEmpresaId('')
       setIsEmpresaFormVisible(false)
-      toast.success('Operador lotérico cadastrado.')
+      toast.success(editingEmpresaId ? 'Operador lotérico atualizado.' : 'Operador lotérico cadastrado.')
     } catch {
-      toast.error('Não foi possível cadastrar operador lotérico.')
+      toast.error(editingEmpresaId ? 'Não foi possível atualizar operador lotérico.' : 'Não foi possível cadastrar operador lotérico.')
+    }
+  }
+
+  function handleEditarEmpresa(entry) {
+    setEditingEmpresaId(String(entry?.id || '').trim())
+    setEmpresaForm({
+      razaoSocial: String(entry?.razaoSocial || ''),
+      cnpj: maskCNPJ(entry?.cnpj || ''),
+    })
+    setIsEmpresaFormVisible(true)
+  }
+
+  function handleCancelarEdicaoEmpresa() {
+    setEditingEmpresaId('')
+    setEmpresaForm({ razaoSocial: '', cnpj: '' })
+    setIsEmpresaFormVisible(false)
+  }
+
+  async function handleExcluirEmpresa(entry) {
+    if (!user) {
+      toast.error('Autenticação obrigatória para excluir operador lotérico.')
+      return
+    }
+
+    const empresaId = String(entry?.id || '').trim()
+
+    if (!empresaId) {
+      toast.error('Operador lotérico inválido para exclusão.')
+      return
+    }
+
+    if (!entry.canDelete) {
+      toast.error('Não é possível excluir. Há lançamentos atrelados a este operador lotérico.')
+      return
+    }
+
+    const confirmado = window.confirm(
+      `Confirma excluir o operador lotérico ${entry.razaoSocial || '--'}?`,
+    )
+
+    if (!confirmado) {
+      return
+    }
+
+    try {
+      await deleteEmpresa(empresaId)
+
+      if (editingEmpresaId === empresaId) {
+        handleCancelarEdicaoEmpresa()
+      }
+
+      toast.success('Operador lotérico excluído com sucesso.')
+    } catch {
+      toast.error('Não foi possível excluir operador lotérico.')
     }
   }
 
@@ -3329,6 +3457,8 @@ function App() {
                       decimalScale={2}
                       fixedDecimalScale
                       allowNegative={false}
+                      inputMode="decimal"
+                      onFocus={handleMoneyInputFocus}
                       value={valorAlvoDestinacao}
                       onValueChange={(values) => setValorAlvoDestinacao(Number(values.floatValue || 0))}
                       placeholder="Informe o valor limite da destinação"
@@ -3495,6 +3625,8 @@ function App() {
                                     decimalScale={2}
                                     fixedDecimalScale
                                     allowNegative={false}
+                                    inputMode="decimal"
+                                    onFocus={handleMoneyInputFocus}
                                     value={selectedProcessValues[item.processoId] || 0}
                                     onValueChange={(values) => {
                                       const value = Math.max(
@@ -3919,6 +4051,8 @@ function App() {
                                   decimalScale={2}
                                   fixedDecimalScale
                                   allowNegative={false}
+                                  inputMode="decimal"
+                                  onFocus={handleMoneyInputFocus}
                                   disabled={hasPagamentoRegistrado}
                                   value={editDestinacaoForm.valorDestinado}
                                   onValueChange={(values) =>
@@ -4067,6 +4201,8 @@ function App() {
                                   decimalScale={2}
                                   fixedDecimalScale
                                   allowNegative={false}
+                                  inputMode="decimal"
+                                  onFocus={handleMoneyInputFocus}
                                   disabled={tipoPagamentoSelecionado === 'total'}
                                   value={
                                     tipoPagamentoSelecionado === 'total'
@@ -4241,6 +4377,8 @@ function App() {
                                 decimalScale={2}
                                 fixedDecimalScale
                                 allowNegative={false}
+                                inputMode="decimal"
+                                onFocus={handleMoneyInputFocus}
                                 disabled
                                 value={editDestinacaoForm.valorDestinado}
                                 onValueChange={(values) =>
@@ -4519,8 +4657,14 @@ function App() {
                       type="button"
                       className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100"
                       onClick={() => {
+                        if (isEmpresaFormVisible) {
+                          handleCancelarEdicaoEmpresa()
+                          return
+                        }
+
+                        setEditingEmpresaId('')
                         setEmpresaForm({ razaoSocial: '', cnpj: '' })
-                        setIsEmpresaFormVisible((current) => !current)
+                        setIsEmpresaFormVisible(true)
                       }}
                     >
                       {isEmpresaFormVisible ? 'Ocultar formulário' : 'Adicionar operador lotérico'}
@@ -4532,7 +4676,9 @@ function App() {
                       className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
                       onSubmit={handleSalvarEmpresa}
                     >
-                      <h3 className="text-base font-semibold text-zinc-900">Novo operador lotérico</h3>
+                      <h3 className="text-base font-semibold text-zinc-900">
+                        {editingEmpresaId ? 'Editar operador lotérico' : 'Novo operador lotérico'}
+                      </h3>
                       <div>
                         <label className="field-label" htmlFor="razaoSocial">
                           Razão social
@@ -4560,14 +4706,79 @@ function App() {
                           placeholder="00.000.000/0000-00"
                         />
                       </div>
-                      <button className="btn-primary w-full" type="submit">
-                        Cadastrar operador lotérico
-                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button className="btn-primary flex-1" type="submit">
+                          {editingEmpresaId ? 'Salvar alterações' : 'Cadastrar operador lotérico'}
+                        </button>
+                        {editingEmpresaId && (
+                          <button
+                            type="button"
+                            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+                            onClick={handleCancelarEdicaoEmpresa}
+                          >
+                            Cancelar edição
+                          </button>
+                        )}
+                      </div>
                     </form>
                   )}
 
                   <div className="mt-4 rounded-xl bg-white p-3 text-sm text-zinc-600">
-                    Operadores lotéricos cadastrados: {empresas.length}
+                    Operadores lotéricos cadastrados: {empresasCadastroLista.length}
+                  </div>
+
+                  <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+                    <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                      <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th scope="col" className="px-3 py-2">Razão social</th>
+                          <th scope="col" className="px-3 py-2">CNPJ</th>
+                          <th scope="col" className="px-3 py-2">Lançamentos atrelados</th>
+                          <th scope="col" className="px-3 py-2 text-right">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {empresasCadastroLista.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="px-3 py-5 text-center text-sm text-slate-500">
+                              Nenhum operador lotérico cadastrado até o momento.
+                            </td>
+                          </tr>
+                        ) : (
+                          empresasCadastroLista.map((item) => (
+                            <tr key={item.id}>
+                              <td className="px-3 py-2 font-medium text-zinc-900">{item.razaoSocial}</td>
+                              <td className="px-3 py-2 text-zinc-700">{item.cnpj || 'Não informado'}</td>
+                              <td className="px-3 py-2 text-zinc-700">{item.totalLancamentosAtrelados}</td>
+                              <td className="px-3 py-2">
+                                <div className="flex flex-wrap items-center justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-800 transition hover:bg-cyan-100"
+                                    onClick={() => handleEditarEmpresa(item)}
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition enabled:hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                                    onClick={() => handleExcluirEmpresa(item)}
+                                    disabled={!item.canDelete}
+                                    title={
+                                      item.canDelete
+                                        ? 'Excluir operador lotérico'
+                                        : 'Não é possível excluir porque há lançamentos atrelados'
+                                    }
+                                  >
+                                    Excluir
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </section>
               )}
@@ -5853,6 +6064,8 @@ function App() {
                   decimalScale={2}
                   fixedDecimalScale
                   allowNegative={false}
+                  inputMode="decimal"
+                  onFocus={handleMoneyInputFocus}
                   value={origemManualForm.valorFomento}
                   onValueChange={(values) =>
                     setOrigemManualForm((current) => ({

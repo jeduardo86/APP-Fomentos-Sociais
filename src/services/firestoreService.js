@@ -428,6 +428,16 @@ export async function createEmpresa(payload) {
   await addDoc(collections.empresas, payload)
 }
 
+export async function updateEmpresa(empresaId, payload) {
+  const ref = doc(db, 'empresas', empresaId)
+  await updateDoc(ref, payload)
+}
+
+export async function deleteEmpresa(empresaId) {
+  const ref = doc(db, 'empresas', empresaId)
+  await deleteDoc(ref)
+}
+
 export async function createEntidade(payload) {
   return addDoc(collections.entidades, payload)
 }
