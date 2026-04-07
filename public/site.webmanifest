@@ -1,0 +1,21 @@
+{
+  "name": "APP Fomentos Sociais",
+  "short_name": "Fomentos",
+  "description": "Gestao de destinacoes sociais de fomento.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1F7AE0",
+  "theme_color": "#1F7AE0",
+  "icons": [
+    {
+      "src": "/app-icon-heart-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/app-icon-heart-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
