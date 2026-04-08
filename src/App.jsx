@@ -1193,12 +1193,23 @@ function App() {
   const totalMunicipiosGerencial = totaisPorMunicipioGerencial.length
 
   const linhasDetalhadasGerencial = useMemo(
-    () =>
-      destinacoesGerencialFiltradas
+    () => {
+      const cnpjByProcesso = new Map()
+      baseCsv.forEach((item) => {
+        const id = String(item.processoId || '').trim()
+        if (id) {
+          cnpjByProcesso.set(id, String(item.cnpj || '').trim())
+        }
+      })
+
+      return destinacoesGerencialFiltradas
         .map((item) => {
           const entidade = entidadesById[item.entidadeId]
           const categoriaValue = String(entidade?.categoria || '').trim()
           const valorCents = toMoneyCents(item.valorDestinado)
+          
+          let cnpjEmpresa = cnpjByProcesso.get(String(item.processoId || '').trim()) || item.cnpj || ''
+          const cnpjDigits = sanitizeCNPJ(cnpjEmpresa)
 
           return {
             id: String(item.id || '').trim(),
@@ -1207,6 +1218,8 @@ function App() {
             ano: getAnoFromCompetenciaOrDate(item) || 'Sem ano',
             processoId: String(item.processoId || '').trim(),
             termo: String(item.termo || '').trim(),
+            empresa: String(item.empresa || 'Não informado').trim(),
+            cnpjEmpresa: cnpjDigits ? maskCNPJ(cnpjDigits) : 'Não informado',
             destino: String(item.produto || '').trim(),
             entidade: String(item.entidadeNome || entidade?.nome || '').trim(),
             categoria: gerencialCategoriaLabelByValue.get(categoriaValue) || categoriaValue || 'Não informada',
@@ -1226,8 +1239,9 @@ function App() {
           }
 
           return a.processoId.localeCompare(b.processoId)
-        }),
-    [destinacoesGerencialFiltradas, entidadesById, gerencialCategoriaLabelByValue],
+        })
+    },
+    [destinacoesGerencialFiltradas, entidadesById, gerencialCategoriaLabelByValue, baseCsv],
   )
 
   const processosEmpresa = useMemo(() => {
@@ -2087,6 +2101,8 @@ function App() {
         'Ano',
         'Processo',
         'Termo',
+        'Operador lotérico',
+        'CNPJ',
         'Destino',
         'Entidade',
         'Categoria',
@@ -2102,6 +2118,8 @@ function App() {
         item.ano,
         item.processoId,
         item.termo,
+        item.empresa,
+        item.cnpjEmpresa,
         item.destino,
         item.entidade,
         item.categoria,
@@ -2111,27 +2129,27 @@ function App() {
         formatCurrency(item.valor),
       ])
 
-      const lines = []
-      lines.push(header.map((item) => escapeCsvValue(item)).join(';'))
-      detailRows.forEach((row) => {
-        lines.push(row.map((item) => escapeCsvValue(item)).join(';'))
-      })
+      const lines = [
+        header.map((item) => escapeCsvValue(item)).join(';'),
+        ...detailRows.map((row) => row.map((item) => escapeCsvValue(item)).join(';')),
+      ]
 
-      const csvContent = `\uFEFF${lines.join('\n')}`
+      const csvContent = '\uFEFF' + lines.join('\n')
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
 
       link.href = url
-      link.download = `relatorio-gerencial-destinacao-fomento-${new Date().toISOString().slice(0, 10)}.csv`
+      link.setAttribute('download', `relatorio-gerencial-destinacao-fomento-${new Date().toISOString().slice(0, 10)}.csv`)
       document.body.appendChild(link)
       link.click()
-      link.remove()
+      document.body.removeChild(link)
       URL.revokeObjectURL(url)
 
       toast.success('CSV gerado com sucesso.')
-    } catch {
-      toast.error('Não foi possível gerar o CSV do relatório gerencial.')
+    } catch (error) {
+      console.error(error)
+      toast.error('Não foi possível gerar o CSV: ' + String(error.message))
     } finally {
       setIsExportingGerencialCsv(false)
     }
@@ -6436,6 +6454,8 @@ function App() {
                               <th className="px-3 py-2">Competência</th>
                               <th className="px-3 py-2">Ano</th>
                               <th className="px-3 py-2">Processo</th>
+                              <th className="px-3 py-2">Operador Lotérico</th>
+                              <th className="px-3 py-2">CNPJ</th>
                               <th className="px-3 py-2">Destino</th>
                               <th className="px-3 py-2">Entidade</th>
                               <th className="px-3 py-2">Categoria</th>
@@ -6452,6 +6472,8 @@ function App() {
                                 <td className="px-3 py-2">{item.competencia || '--/----'}</td>
                                 <td className="px-3 py-2">{item.ano}</td>
                                 <td className="px-3 py-2">{item.processoId || '--'}</td>
+                                <td className="px-3 py-2">{item.empresa}</td>
+                                <td className="px-3 py-2">{item.cnpjEmpresa}</td>
                                 <td className="px-3 py-2">{item.destino || 'Não informado'}</td>
                                 <td className="px-3 py-2">{item.entidade || 'Não informada'}</td>
                                 <td className="px-3 py-2">{item.categoria}</td>
