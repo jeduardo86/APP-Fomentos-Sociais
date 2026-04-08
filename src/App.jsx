@@ -253,6 +253,194 @@ function drawInstitutionalPdfHeader(pdf, title) {
   return cursorY + 8
 }
 
+function generateDestinacaoPdf(data) {
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const pageWidth = pdf.internal.pageSize.getWidth()
+  const pageHeight = pdf.internal.pageSize.getHeight()
+  const marginX = 14
+  const contentWidth = pageWidth - marginX * 2
+  
+  let cursorY = drawInstitutionalPdfHeader(pdf, 'Documento de Encaminhamento de Destinação Social')
+  cursorY += 6
+
+  function ensurePage(requiredHeight = 10) {
+    if (cursorY + requiredHeight > pageHeight - 16) {
+      pdf.addPage()
+      cursorY = 16
+      return true
+    }
+    return false
+  }
+
+  // INTRO
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(10)
+  pdf.setTextColor(51, 65, 85) // slate-700
+  const introText = `Ao operador lotérico autorizado,\nEncaminham-se, para ciência e providências, as informações da destinação social registrada na competência ${data.competenciaDocumento}.\nData da solicitação: ${data.solicitacaoDataDocumento}.`
+  const splitIntro = pdf.splitTextToSize(introText, contentWidth)
+  pdf.text(splitIntro, marginX, cursorY)
+  cursorY += (splitIntro.length * 5) + 4
+
+  function drawSectionTitle(title) {
+    ensurePage(12)
+    pdf.setFont('helvetica', 'bold')
+    pdf.setFontSize(11)
+    pdf.setTextColor(17, 24, 39) // slate-900
+    pdf.text(title, marginX, cursorY)
+    cursorY += 4
+    
+    pdf.setDrawColor(226, 232, 240)
+    pdf.setLineWidth(0.3)
+    pdf.line(marginX, cursorY, marginX + contentWidth, cursorY)
+    cursorY += 4
+  }
+
+  function drawInfoGrid(items) {
+    const col1X = marginX
+    const col2X = marginX + (contentWidth / 2) + 4
+    
+    let isLeft = true
+    let rowMaxY = cursorY
+    let startY = cursorY
+
+    items.forEach((item, i) => {
+      if (isLeft && i > 0) {
+        startY = rowMaxY + 2
+        ensurePage(12)
+      }
+      
+      const currentX = isLeft ? col1X : col2X
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(8)
+      pdf.setTextColor(100, 116, 139) // slate-500
+      pdf.text(String(item.label || '').toUpperCase(), currentX, startY)
+      
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(10)
+      pdf.setTextColor(15, 23, 42) // slate-900
+      const splitValue = pdf.splitTextToSize(String(item.value || ''), (contentWidth / 2) - 8)
+      pdf.text(splitValue, currentX, startY + 4)
+      
+      const bottomY = startY + 4 + (splitValue.length * 4)
+      if (bottomY > rowMaxY) {
+        rowMaxY = bottomY
+      }
+      
+      isLeft = !isLeft
+    })
+    
+    cursorY = rowMaxY + 6
+  }
+
+  drawSectionTitle('Dados do Operador Lotérico')
+  drawInfoGrid([
+    { label: 'Razão Social', value: data.nomeEmpresa },
+    { label: 'CNPJ', value: data.cnpjEmpresa }
+  ])
+
+  drawSectionTitle('Dados da Entidade Destinatária')
+  drawInfoGrid([
+    { label: 'Entidade', value: data.nomeEntidade },
+    { label: 'CNPJ', value: data.cnpjEntidade },
+    { label: 'Município / UF', value: `${data.municipioEntidade} / ${data.estadoEntidade}` },
+    { label: 'Responsável', value: data.responsavelEntidade },
+    { label: 'Contato', value: data.contatoEntidade },
+    { label: 'Forma de Recebimento', value: data.recebimentoStr },
+  ])
+
+  drawSectionTitle('Processos e Valores Destinados')
+  
+  ensurePage(15)
+  pdf.setFillColor(248, 250, 252) // slate-50
+  pdf.setDrawColor(226, 232, 240) // slate-200
+  pdf.setLineWidth(0.3)
+  pdf.rect(marginX, cursorY, contentWidth, 8, 'FD')
+  
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(8)
+  pdf.setTextColor(71, 85, 105)
+  
+  pdf.text('PROCESSO', marginX + 3, cursorY + 5)
+  pdf.text('PRODUTO', marginX + 45, cursorY + 5)
+  pdf.text('TERMO', marginX + 90, cursorY + 5)
+  pdf.text('VALOR DESTINADO', marginX + contentWidth - 3, cursorY + 5, { align: 'right' })
+  
+  cursorY += 8
+  
+  data.processos.forEach((p, i) => {
+    const rowHeight = 8
+    ensurePage(rowHeight)
+    
+    if (i % 2 === 0) {
+      pdf.setFillColor(255, 255, 255)
+    } else {
+      pdf.setFillColor(248, 250, 252)
+    }
+    pdf.rect(marginX, cursorY, contentWidth, rowHeight, 'F')
+    
+    pdf.setFont('helvetica', 'normal')
+    pdf.setFontSize(9)
+    pdf.setTextColor(15, 23, 42)
+    
+    pdf.text(String(p.processoId || '--'), marginX + 3, cursorY + 5)
+    
+    const prodStr = String(p.produto || '--')
+    const prodTrunc = prodStr.length > 22 ? prodStr.substring(0, 20) + '...' : prodStr
+    pdf.text(prodTrunc, marginX + 45, cursorY + 5)
+
+    const termoStr = String(p.termo || '--')
+    const termoTrunc = termoStr.length > 25 ? termoStr.substring(0, 23) + '...' : termoStr
+    pdf.text(termoTrunc, marginX + 90, cursorY + 5)
+    
+    pdf.setFont('helvetica', 'bold')
+    pdf.text(formatCurrency(p.valorDestinado), marginX + contentWidth - 3, cursorY + 5, { align: 'right' })
+    
+    pdf.setDrawColor(241, 245, 249)
+    pdf.line(marginX, cursorY + rowHeight, marginX + contentWidth, cursorY + rowHeight)
+    
+    cursorY += rowHeight
+  })
+  
+  ensurePage(12)
+  cursorY += 2
+  pdf.setFillColor(241, 245, 249)
+  pdf.rect(marginX, cursorY, contentWidth, 10, 'F')
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(10)
+  pdf.setTextColor(15, 23, 42)
+  pdf.text('VALOR TOTAL DESTINADO:', marginX + 3, cursorY + 6.5)
+  pdf.setFontSize(11)
+  pdf.text(formatCurrency(data.valorTotalDestinado), marginX + contentWidth - 3, cursorY + 6.5, { align: 'right' })
+  cursorY += 14
+  
+  if (data.observacaoDocumento) {
+    drawSectionTitle('Observação')
+    pdf.setFont('helvetica', 'normal')
+    pdf.setFontSize(9)
+    pdf.setTextColor(51, 65, 85)
+    const splitObs = pdf.splitTextToSize(data.observacaoDocumento, contentWidth)
+    pdf.text(splitObs, marginX, cursorY)
+    cursorY += (splitObs.length * 4) + 6
+  }
+
+  ensurePage(30)
+  cursorY += 8
+  pdf.setFont('helvetica', 'normal')
+  pdf.setFontSize(8)
+  pdf.setTextColor(100, 116, 139)
+  pdf.text('Documento emitido para instrução e comprovação administrativa.', marginX, cursorY, { align: 'left' })
+  
+  cursorY += 6
+  pdf.setFont('helvetica', 'bold')
+  pdf.setFontSize(9)
+  pdf.setTextColor(15, 23, 42)
+  pdf.text(`Documento emitido em: ${data.dataEmissaoDocumento}`, marginX, cursorY)
+  cursorY += 4
+  pdf.text(`Responsável pelo registro: ${data.usuarioResponsavelDocumento}`, marginX, cursorY)
+
+  return pdf
+}
+
 function getEmpresaGroupKey(cnpjValue, empresaNome) {
   const cnpjDigits = sanitizeCNPJ(cnpjValue)
 
@@ -272,13 +460,12 @@ function createInitialEntidadeForm() {
     municipio: '',
     contato: '',
     responsavel: '',
-    formaPagamento: '', // PIX, ContaBancaria, Boleto, Outro
-    pix: '',
+    formaPagamento: 'PIX',
+    chavePix: '',
+    dadosBancarios: '',
     banco: '',
     agencia: '',
     conta: '',
-    contaDigito: '',
-    outrosDados: '',
   }
 }
 
@@ -1697,50 +1884,183 @@ function App() {
       return
     }
 
-    const reportContent = reportContentRef.current
-
-    if (!reportContent) {
-      toast.error('Não foi possível localizar o conteúdo do relatório para gerar PDF.')
-      return
-    }
-
     setIsGeneratingPdf(true)
 
     try {
-      const canvas = await html2canvas(reportContent, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-      })
-
-      const imgData = canvas.toDataURL('image/png')
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
       const pageWidth = pdf.internal.pageSize.getWidth()
       const pageHeight = pdf.internal.pageSize.getHeight()
-      const imgWidth = pageWidth
-      const imgHeight = (canvas.height * imgWidth) / canvas.width
+      const marginX = 14
+      const contentWidth = pageWidth - marginX * 2
+      
+      let cursorY = drawInstitutionalPdfHeader(pdf, 'Relatório de Verificação de Destinação Social')
+      cursorY += 6
 
-      if (imgHeight <= pageHeight) {
-        pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight)
-      } else {
-        let heightLeft = imgHeight
-        let position = 0
-
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-        heightLeft -= pageHeight
-
-        while (heightLeft > 0) {
-          position = heightLeft - imgHeight
+      function ensurePage(requiredHeight = 10) {
+        if (cursorY + requiredHeight > pageHeight - 16) {
           pdf.addPage()
-          pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
-          heightLeft -= pageHeight
+          cursorY = 16
+          return true
         }
+        return false
       }
 
+      function writeText(text, options = {}) {
+        const size = options.size || 10
+        const fontStyle = options.fontStyle || 'normal'
+        const align = options.align || 'justify'
+        const gapAfter = options.gapAfter ?? 4
+
+        pdf.setFont('helvetica', fontStyle)
+        pdf.setFontSize(size)
+        pdf.setTextColor(51, 65, 85) // slate-700
+
+        const lines = pdf.splitTextToSize(text, contentWidth)
+        ensurePage(lines.length * 5)
+        pdf.text(lines, marginX, cursorY, { align: align === 'justify' ? 'justify' : 'left', maxWidth: contentWidth })
+        cursorY += (lines.length * 5) + gapAfter
+      }
+
+      // Text block for the decree
+      pdf.setFillColor(248, 250, 252) // slate-50
+      pdf.setDrawColor(226, 232, 240) // slate-200
+      pdf.setLineWidth(0.3)
+      pdf.rect(marginX, cursorY, contentWidth, 32, 'FD')
+      
+      let introY = cursorY + 6
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(9)
+      pdf.setTextColor(71, 85, 105)
+      
+      const introText1 = 'De acordo com a Instrução Normativa nº 001/2024, que regulamenta a modalidade passiva, os recursos correspondentes a 7,5% da totalidade dos prêmios devem ser destinados ao fomento de ações e projetos nas áreas de Assistência, Desportos, Educação, Saúde e Desenvolvimento Social. Essas ações devem ser executadas pelo operador lotérico autorizado em parceria com a LOTEP. O Decreto nº 44.576/2023 também inclui a Segurança Pública entre as áreas contempladas.'
+      const splitIntro1 = pdf.splitTextToSize(introText1, contentWidth - 6)
+      pdf.text(splitIntro1, marginX + 3, introY, { align: 'justify', maxWidth: contentWidth - 6 })
+      cursorY += 38
+
+      writeText(`Em atendimento à consulta formalizada nos autos do processo administrativo nº ${reportProcessoIdNormalizado}, certifica-se a situação da destinação social a ele vinculada.`, { fontStyle: 'bold' })
+
+      if (destinacoesRelatorio.length > 0) {
+        writeText(`Após análise dos registros institucionais disponíveis no sistema de controle de fomentos, constata-se que houve destinação social de recursos para o referido processo, no montante total de ${formatCurrency(totalDestinadoRelatorio)}.`)
+
+        const entidadesTexto = entidadesRelatorio
+          .map((item) => item.cnpj ? `${item.nome} (CNPJ ${item.cnpj})` : `${item.nome} (CNPJ não informado)`)
+          .join('; ') || 'Entidade não identificada'
+        
+        writeText(`As entidades recebedoras do fomento são: ${entidadesTexto}.`)
+
+        const areasTexto = areasDestinacaoRelatorio.join('; ') || 'Área não identificada'
+        writeText(`As áreas contempladas pela destinação no processo são: ${areasTexto}.`)
+
+        if (statusPagamentoRelatorio === 'pago') {
+          writeText(`Quanto ao pagamento, verifica-se que o valor destinado encontra-se integralmente pago, no total de ${formatCurrency(totalPagoRelatorio)}.`)
+        } else if (statusPagamentoRelatorio === 'parcial') {
+          writeText(`Quanto ao pagamento, verifica-se quitação parcial, com total pago de ${formatCurrency(totalPagoRelatorio)} e saldo pendente de ${formatCurrency(saldoPagamentoRelatorio)}.`)
+        } else {
+          writeText(`Quanto ao pagamento, não há registro de quitação até a presente data.`)
+        }
+
+        cursorY += 6
+        ensurePage(15)
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(10)
+        pdf.setTextColor(15, 23, 42)
+        pdf.text('Detalhamento por Entidade', marginX, cursorY)
+        cursorY += 5
+
+        const destinacoesPorEntidade = new Map()
+        destinacoesRelatorio.forEach(dest => {
+          const entId = dest.entidadeId
+          const entidadeCadastro = entidadesById[entId]
+          const nomeEntidade = String(dest.entidadeNome || entidadeCadastro?.nome || 'Entidade não identificada').trim()
+          
+          if (!destinacoesPorEntidade.has(nomeEntidade)) {
+            destinacoesPorEntidade.set(nomeEntidade, {
+              nome: nomeEntidade,
+              valorDestinado: 0,
+              valorPago: 0
+            })
+          }
+          const item = destinacoesPorEntidade.get(nomeEntidade)
+          item.valorDestinado += Number(dest.valorDestinado || 0)
+          item.valorPago += Number(dest.valorPagoAcumulado || 0)
+        })
+
+        const detalhamento = Array.from(destinacoesPorEntidade.values())
+
+        pdf.setFillColor(241, 245, 249) // slate-100
+        pdf.setDrawColor(226, 232, 240) // slate-200
+        pdf.setLineWidth(0.3)
+        pdf.rect(marginX, cursorY, contentWidth, 7, 'F')
+        pdf.line(marginX, cursorY + 7, marginX + contentWidth, cursorY + 7)
+        pdf.line(marginX, cursorY, marginX + contentWidth, cursorY)
+        
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(8)
+        pdf.setTextColor(71, 85, 105)
+        
+        pdf.text('ENTIDADE', marginX + 3, cursorY + 5)
+        pdf.text('DESTINADO', marginX + contentWidth - 40, cursorY + 5, { align: 'right' })
+        pdf.text('PAGO', marginX + contentWidth - 3, cursorY + 5, { align: 'right' })
+        cursorY += 7
+
+        detalhamento.forEach((row, rowIndex) => {
+          ensurePage(8)
+          if (rowIndex % 2 !== 0) {
+            pdf.setFillColor(248, 250, 252)
+            pdf.rect(marginX, cursorY, contentWidth, 7, 'F')
+          }
+          
+          pdf.setFont('helvetica', 'normal')
+          pdf.setFontSize(9)
+          pdf.setTextColor(15, 23, 42)
+          
+          const truncNome = row.nome.length > 50 ? row.nome.substring(0, 47) + '...' : row.nome
+          pdf.text(truncNome, marginX + 3, cursorY + 4.8)
+          
+          pdf.setFont('helvetica', 'bold')
+          pdf.text(formatCurrency(row.valorDestinado), marginX + contentWidth - 40, cursorY + 4.8, { align: 'right' })
+          pdf.setTextColor(51, 65, 85)
+          pdf.setFont('helvetica', 'normal')
+          pdf.text(formatCurrency(row.valorPago), marginX + contentWidth - 3, cursorY + 4.8, { align: 'right' })
+          
+          pdf.setDrawColor(241, 245, 249)
+          pdf.line(marginX, cursorY + 7, marginX + contentWidth, cursorY + 7)
+          cursorY += 7
+        })
+        cursorY += 4
+      } else {
+        writeText(`Após análise dos registros institucionais disponíveis no sistema de controle de fomentos, não foram localizadas destinações sociais registradas para o processo informado até a presente data.`)
+        writeText(`O presente relatório é emitido para fins de instrução processual, com vistas à comprovação formal da inexistência de destinação social registrada no âmbito do processo em epígrafe.`)
+      }
+
+      cursorY += 10
+      writeText(`João Pessoa, ${dataEmissaoRelatorioExtenso}.`, { align: 'left' })
+
+      ensurePage(40)
+      cursorY += 25
+      
+      pdf.setDrawColor(148, 163, 184)
+      pdf.setLineWidth(0.3)
+      const sigWidth = 80
+      pdf.line((pageWidth - sigWidth) / 2, cursorY, (pageWidth + sigWidth) / 2, cursorY)
+      
+      cursorY += 5
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(10)
+      pdf.setTextColor(17, 24, 39)
+      pdf.text(String(usuarioAssinaturaRelatorio).toUpperCase(), pageWidth / 2, cursorY, { align: 'center' })
+      
+      cursorY += 4
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(8)
+      pdf.setTextColor(71, 85, 105)
+      pdf.text(String(userProfile?.cargo || 'CARGO/FUNÇÃO').toUpperCase(), pageWidth / 2, cursorY, { align: 'center' })
+
       const safeProcessoId = String(reportProcessoIdNormalizado).replace(/[^a-zA-Z0-9-_]/g, '_')
-      pdf.save(`relatorio-destinacao-social-${safeProcessoId}.pdf`)
+      pdf.save(`relatorio-verificacao-destinacao-${safeProcessoId}.pdf`)
       toast.success('PDF gerado com sucesso.')
-    } catch {
+    } catch (err) {
+      console.error(err)
       toast.error('Não foi possível gerar o PDF do relatório.')
     } finally {
       setIsGeneratingPdf(false)
@@ -1761,29 +2081,6 @@ function App() {
     setIsExportingGerencialCsv(true)
 
     try {
-      const filtrosAplicados = [
-        ['Ano', reportGerencialAno === 'todos' ? 'Todos' : reportGerencialAno],
-        ['Competência', reportGerencialCompetencia === 'todos' ? 'Todas' : reportGerencialCompetencia],
-        ['Destino', reportGerencialDestino === 'todos' ? 'Todos' : reportGerencialDestino],
-        [
-          'Entidade',
-          reportGerencialEntidadeId === 'todos'
-            ? 'Todas'
-            : entidadesById[reportGerencialEntidadeId]?.nome || 'Não informada',
-        ],
-        [
-          'Status',
-          reportGerencialStatus === 'todos' ? 'Todos' : getStatusPagamentoLabel(reportGerencialStatus),
-        ],
-      ]
-
-      const summaryRows = [
-        ['Total destinado', formatCurrency(totalDestinadoGerencial)],
-        ['Total de destinações', String(quantidadeDestinacoesGerencial)],
-        ['Total de entidades', String(totalEntidadesGerencial)],
-        ['Total de municípios', String(totalMunicipiosGerencial)],
-      ]
-
       const header = [
         'Data solicitação',
         'Competência',
@@ -1799,54 +2096,22 @@ function App() {
         'Valor destinado',
       ]
 
-      const detailRows = linhasDetalhadasGerencial.map((item) => {
-        const entidade = entidadesById[item.entidadeId]
-        let dadosBancarios = '--'
-        if (entidade?.formaPagamento === 'PIX') {
-          dadosBancarios = `Pix: ${entidade?.pix || '--'}`
-        } else if (entidade?.formaPagamento === 'ContaBancaria') {
-          const banco = entidade?.banco || '--'
-          const agencia = entidade?.agencia || '--'
-          const conta = entidade?.conta || '--'
-          const contaDigito = entidade?.contaDigito ? `-${entidade.contaDigito}` : ''
-          dadosBancarios = `Banco: ${banco} | Agência: ${agencia} | Conta: ${conta}${contaDigito}`
-        } else if (entidade?.formaPagamento === 'Outro') {
-          dadosBancarios = `Outro: ${entidade?.outrosDados || '--'}`
-        } else if (entidade?.formaPagamento === 'Boleto') {
-          dadosBancarios = 'Boleto'
-        }
-        return [
-          formatDateBR(item.solicitacaoData),
-          item.competencia,
-          item.ano,
-          item.processoId,
-          item.termo,
-          item.destino,
-          item.entidade,
-          item.categoria,
-          item.municipio,
-          item.estado,
-          getStatusPagamentoLabel(item.status),
-          formatCurrency(item.valor),
-          entidade?.formaPagamento || '--',
-          dadosBancarios,
-        ]
-      })
+      const detailRows = linhasDetalhadasGerencial.map((item) => [
+        formatDateBR(item.solicitacaoData),
+        item.competencia,
+        item.ano,
+        item.processoId,
+        item.termo,
+        item.destino,
+        item.entidade,
+        item.categoria,
+        item.municipio,
+        item.estado,
+        getStatusPagamentoLabel(item.status),
+        formatCurrency(item.valor),
+      ])
 
       const lines = []
-      lines.push('Relatório;Informações Gerenciais de Destinação de Fomento')
-      lines.push(`Emitido em;${new Date().toLocaleString('pt-BR')}`)
-      lines.push('')
-      lines.push('Filtros aplicados')
-      filtrosAplicados.forEach(([label, value]) => {
-        lines.push(`${escapeCsvValue(label)};${escapeCsvValue(value)}`)
-      })
-      lines.push('')
-      lines.push('Resumo executivo')
-      summaryRows.forEach(([label, value]) => {
-        lines.push(`${escapeCsvValue(label)};${escapeCsvValue(value)}`)
-      })
-      lines.push('')
       lines.push(header.map((item) => escapeCsvValue(item)).join(';'))
       detailRows.forEach((row) => {
         lines.push(row.map((item) => escapeCsvValue(item)).join(';'))
@@ -1889,43 +2154,30 @@ function App() {
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
       const pageHeight = pdf.internal.pageSize.getHeight()
       const marginX = 14
-      const lineHeight = 5
-      const blockGap = 2
       const contentWidth = pdf.internal.pageSize.getWidth() - marginX * 2
       const generatedAt = new Date().toLocaleString('pt-BR')
       const usuarioGerador = userProfile?.nome || user?.displayName || user?.email || 'Usuário responsável'
 
-      let cursorY = drawInstitutionalPdfHeader(pdf, 'Informações Gerenciais de Destinação de Fomento')
+      let cursorY = drawInstitutionalPdfHeader(pdf, 'Relatório Gerencial de Destinação Social')
+      cursorY += 2
 
-      function ensureSpace(requiredHeight = lineHeight) {
-        if (cursorY + requiredHeight > pageHeight - 14) {
+      function ensureSpace(requiredHeight) {
+        if (cursorY + requiredHeight > pageHeight - 16) {
           pdf.addPage()
           cursorY = 16
+          return true
         }
+        return false
       }
 
-      function writeText(text, options = {}) {
-        const fontStyle = options.fontStyle || 'normal'
-        const size = options.size || 10
-        const gapAfter = options.gapAfter ?? 1.5
-        const lines = Array.isArray(text) ? text : [text]
+      // 1. FILTROS APLICADOS
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(10)
+      pdf.setTextColor(39, 39, 42)
+      pdf.text('Filtros aplicados no relatório', marginX, cursorY)
+      cursorY += 5
 
-        pdf.setFont('helvetica', fontStyle)
-        pdf.setFontSize(size)
-
-        lines.forEach((line) => {
-          const chunks = pdf.splitTextToSize(String(line || ''), contentWidth)
-          const blockHeight = Math.max(lineHeight, chunks.length * lineHeight)
-          ensureSpace(blockHeight)
-          pdf.text(chunks, marginX, cursorY)
-          cursorY += blockHeight
-        })
-
-        cursorY += gapAfter
-      }
-
-      writeText('Filtros aplicados', { fontStyle: 'bold', size: 11, gapAfter: blockGap })
-      writeText([
+      const filtrosText = [
         `Ano: ${reportGerencialAno === 'todos' ? 'Todos' : reportGerencialAno}`,
         `Competência: ${reportGerencialCompetencia === 'todos' ? 'Todas' : reportGerencialCompetencia}`,
         `Destino: ${reportGerencialDestino === 'todos' ? 'Todos' : reportGerencialDestino}`,
@@ -1937,49 +2189,216 @@ function App() {
         `Status: ${
           reportGerencialStatus === 'todos' ? 'Todos' : getStatusPagamentoLabel(reportGerencialStatus)
         }`,
+      ].join('   |   ')
+
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(8)
+      pdf.setTextColor(82, 82, 91)
+      const splitFiltros = pdf.splitTextToSize(filtrosText, contentWidth)
+      pdf.text(splitFiltros, marginX, cursorY)
+      cursorY += (splitFiltros.length * 4) + 6
+
+      // 2. RESUMO EXECUTIVO (CARDS)
+      ensureSpace(30)
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(12)
+      pdf.setTextColor(17, 24, 39)
+      pdf.text('Resumo Executivo', marginX, cursorY)
+      cursorY += 6
+
+      const cardW = (contentWidth - 6) / 2
+      const cardH = 18
+
+      function drawCard(x, y, w, h, title, value) {
+        pdf.setFillColor(248, 250, 252) // slate-50
+        pdf.setDrawColor(226, 232, 240) // slate-200
+        pdf.setLineWidth(0.3)
+        pdf.roundedRect(x, y, w, h, 2, 2, 'FD')
+        
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(8)
+        pdf.setTextColor(100, 116, 139) // slate-500
+        pdf.text(title.toUpperCase(), x + 4, y + 6)
+        
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(15)
+        pdf.setTextColor(15, 23, 42) // slate-900
+        pdf.text(value, x + 4, y + 14)
+      }
+
+      drawCard(marginX, cursorY, cardW, cardH, 'Total Destinado', formatCurrency(totalDestinadoGerencial))
+      drawCard(marginX + cardW + 6, cursorY, cardW, cardH, 'Volume de Destinações', String(quantidadeDestinacoesGerencial))
+      cursorY += cardH + 4
+
+      drawCard(marginX, cursorY, cardW, cardH, 'Entidades Atendidas', String(totalEntidadesGerencial))
+      drawCard(marginX + cardW + 6, cursorY, cardW, cardH, 'Municípios Contemplados', String(totalMunicipiosGerencial))
+      cursorY += cardH + 10
+
+      // Helper to draw tables
+      function drawTable(title, headers, rows, colWidths, alignRights = []) {
+        ensureSpace(20)
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(11)
+        pdf.setTextColor(17, 24, 39)
+        pdf.text(title, marginX, cursorY)
+        cursorY += 5
+
+        function drawHeader() {
+          pdf.setFillColor(241, 245, 249) // slate-100
+          pdf.setDrawColor(226, 232, 240) // slate-200
+          pdf.setLineWidth(0.3)
+          pdf.rect(marginX, cursorY, contentWidth, 7, 'F')
+          pdf.line(marginX, cursorY + 7, marginX + contentWidth, cursorY + 7)
+          pdf.line(marginX, cursorY, marginX + contentWidth, cursorY)
+          pdf.setFont('helvetica', 'bold')
+          pdf.setFontSize(8)
+          pdf.setTextColor(71, 85, 105)
+
+          let currentX = marginX + 3
+          headers.forEach((h, i) => {
+            if (alignRights.includes(i)) {
+              pdf.text(h.toUpperCase(), currentX + colWidths[i] - 6, cursorY + 4.8, { align: 'right' })
+            } else {
+              pdf.text(h.toUpperCase(), currentX, cursorY + 4.8)
+            }
+            currentX += colWidths[i]
+          })
+          cursorY += 7
+        }
+
+        drawHeader()
+
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(9)
+        
+        rows.forEach((row, rowIndex) => {
+          if (ensureSpace(8)) {
+             drawHeader()
+             pdf.setFont('helvetica', 'normal')
+             pdf.setFontSize(9)
+          }
+          
+          if (rowIndex % 2 !== 0) {
+            pdf.setFillColor(248, 250, 252) // slate-50
+            pdf.rect(marginX, cursorY, contentWidth, 7, 'F')
+          }
+          
+          let cx = marginX + 3
+          row.forEach((cell, cellIndex) => {
+            if (cellIndex === 0) {
+              pdf.setTextColor(15, 23, 42)
+              pdf.setFont('helvetica', 'bold')
+            } else {
+              pdf.setTextColor(51, 65, 85)
+              pdf.setFont('helvetica', 'normal')
+            }
+            const cellStr = String(cell || '')
+            
+            if (alignRights.includes(cellIndex)) {
+              pdf.text(cellStr, cx + colWidths[cellIndex] - 6, cursorY + 4.8, { align: 'right' })
+            } else {
+              // Simple truncation for long strings
+              const truncated = cellStr.length > 55 ? cellStr.substring(0, 52) + '...' : cellStr
+              pdf.text(truncated, cx, cursorY + 4.8)
+            }
+            cx += colWidths[cellIndex]
+          })
+          
+          pdf.setDrawColor(241, 245, 249)
+          pdf.line(marginX, cursorY + 7, marginX + contentWidth, cursorY + 7)
+          cursorY += 7
+        })
+        cursorY += 8
+      }
+
+      // 3. DESTINAÇÃO POR ANO
+      const anoRows = totaisPorAnoGerencial.map((item) => [
+        String(item.ano),
+        formatCurrency(item.valor),
+        formatPercent(item.percentual),
       ])
+      drawTable('Distribuição por Ano', ['Ano', 'Valor Destinado', 'Representatividade'], anoRows, [60, 60, 60], [1, 2])
 
-      writeText('Resumo executivo', { fontStyle: 'bold', size: 11, gapAfter: blockGap })
-      writeText([
-        `Valor total destinado: ${formatCurrency(totalDestinadoGerencial)}`,
-        `Total de destinações: ${quantidadeDestinacoesGerencial}`,
-        `Total de entidades atendidas: ${totalEntidadesGerencial}`,
-        `Total de municípios atendidos: ${totalMunicipiosGerencial}`,
+      // 4. DESTINAÇÃO POR CATEGORIA
+      const catRows = totaisPorCategoriaGerencial.map((item) => [
+        String(item.categoria),
+        formatCurrency(item.valor),
+        formatPercent(item.percentual),
       ])
+      drawTable('Distribuição por Categoria de Assistência', ['Categoria', 'Valor Destinado', 'Representatividade'], catRows, [90, 50, 42], [1, 2])
 
-      writeText('Destinação por ano', { fontStyle: 'bold', size: 11, gapAfter: blockGap })
-      totaisPorAnoGerencial.forEach((item) => {
-        writeText(`${item.ano}: ${formatCurrency(item.valor)} (${formatPercent(item.percentual)})`, {
-          gapAfter: 0.5,
-        })
+      // Análise Top 10
+      const mapaEntidades = new Map()
+      const mapaOperadores = new Map()
+
+      destinacoesGerencialFiltradas.forEach((item) => {
+        const entidade = entidadesById[item.entidadeId]
+        const nomeEntidade = String(item.entidadeNome || entidade?.nome || 'Não informada').trim()
+        const nomeOperador = String(item.empresa || 'Operador não informado').trim()
+        const valorCents = toMoneyCents(item.valorDestinado)
+        
+        mapaEntidades.set(nomeEntidade, (mapaEntidades.get(nomeEntidade) || 0) + valorCents)
+        mapaOperadores.set(nomeOperador, (mapaOperadores.get(nomeOperador) || 0) + valorCents)
       })
 
-      writeText('Destinação por categoria de assistência', {
-        fontStyle: 'bold',
-        size: 11,
-        gapAfter: blockGap,
-      })
-      totaisPorCategoriaGerencial.forEach((item) => {
-        writeText(`${item.categoria}: ${formatCurrency(item.valor)} (${formatPercent(item.percentual)})`, {
-          gapAfter: 0.5,
-        })
-      })
+      const rankingEntidades = Array.from(mapaEntidades.entries())
+        .map(([nome, valorCents]) => ({ nome, valorCents }))
+        .sort((a, b) => b.valorCents - a.valorCents)
+        .slice(0, 10)
 
-      writeText('Municípios atendidos', { fontStyle: 'bold', size: 11, gapAfter: blockGap })
-      totaisPorMunicipioGerencial.forEach((item) => {
-        writeText(`${item.municipio}/${item.estado}: ${formatCurrency(item.valor)} | Destinações: ${item.quantidade}`, {
-          gapAfter: 0.5,
-        })
-      })
+      const rankingOperadores = Array.from(mapaOperadores.entries())
+        .map(([nome, valorCents]) => ({ nome, valorCents }))
+        .sort((a, b) => b.valorCents - a.valorCents)
+        .slice(0, 10)
 
-      writeText(
-        [`Relatório emitido em ${generatedAt}.`, `Responsável pela emissão: ${usuarioGerador}.`],
-        { gapAfter: blockGap },
-      )
+      // 5. TOP 10 ENTIDADES
+      if (rankingEntidades.length > 0) {
+        const entRows = rankingEntidades.map((item, idx) => [
+          `${idx + 1}º`,
+          item.nome,
+          formatCurrency(fromMoneyCents(item.valorCents)),
+          formatPercent(totalDestinadoGerencialCents > 0 ? (item.valorCents / totalDestinadoGerencialCents) * 100 : 0),
+        ])
+        drawTable('Top 10 Entidades Beneficiadas', ['Rank', 'Entidade', 'Valor Destinado', 'Part.'], entRows, [15, 100, 40, 27], [2, 3])
+      }
+
+      // 6. TOP 10 OPERADORES
+      if (rankingOperadores.length > 0) {
+        const opRows = rankingOperadores.map((item, idx) => [
+          `${idx + 1}º`,
+          item.nome,
+          formatCurrency(fromMoneyCents(item.valorCents)),
+          formatPercent(totalDestinadoGerencialCents > 0 ? (item.valorCents / totalDestinadoGerencialCents) * 100 : 0),
+        ])
+        drawTable('Top 10 Operadores Lotéricos (Origem dos Fomentos)', ['Rank', 'Operador Lotérico', 'Valor Destinado', 'Part.'], opRows, [15, 100, 40, 27], [2, 3])
+      }
+
+      // 7. MUNICÍPIOS
+      const munRows = totaisPorMunicipioGerencial.map((item) => [
+        `${item.municipio}/${item.estado}`,
+        String(item.quantidade),
+        formatCurrency(item.valor),
+      ])
+      drawTable('Abrangência Municipal', ['Município / UF', 'Qtd Destinações', 'Valor Destinado'], munRows, [90, 40, 52], [1, 2])
+
+      // Page numbering & Footer
+      const totalPages = pdf.internal.getNumberOfPages()
+      for (let i = 1; i <= totalPages; i++) {
+        pdf.setPage(i)
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(8)
+        pdf.setTextColor(148, 163, 184) // slate-400
+        pdf.text(
+          `Emitido em ${generatedAt} por ${usuarioGerador} - Página ${i} de ${totalPages}`,
+          marginX,
+          pageHeight - 8
+        )
+      }
 
       pdf.save(`relatorio-gerencial-destinacao-fomento-${new Date().toISOString().slice(0, 10)}.pdf`)
-      toast.success('PDF gerado com sucesso.')
-    } catch {
+      toast.success('PDF gerencial gerado com sucesso.')
+    } catch (err) {
+      console.error(err)
       toast.error('Não foi possível gerar o PDF do relatório gerencial.')
     } finally {
       setIsGeneratingGerencialPdf(false)
@@ -2171,42 +2590,6 @@ function App() {
       let documentoGerado = false
 
       try {
-        const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-        const pageWidth = pdf.internal.pageSize.getWidth()
-        const pageHeight = pdf.internal.pageSize.getHeight()
-        const marginX = 14
-        const contentWidth = pageWidth - marginX * 2
-        const lineHeight = 5.5
-        const sectionGap = 3.5
-        let cursorY = drawInstitutionalPdfHeader(pdf, 'Documento de Encaminhamento de Destinação Social')
-
-        function ensurePage(requiredHeight = lineHeight) {
-          if (cursorY + requiredHeight > pageHeight - 16) {
-            pdf.addPage()
-            cursorY = 16
-          }
-        }
-
-        function writeLines(text, options = {}) {
-          const size = options.size || 11
-          const fontStyle = options.fontStyle || 'normal'
-          const gapAfter = options.gapAfter ?? 2
-          const lines = Array.isArray(text) ? text : [text]
-
-          pdf.setFont('helvetica', fontStyle)
-          pdf.setFontSize(size)
-
-          lines.forEach((line) => {
-            const chunks = pdf.splitTextToSize(String(line || ''), contentWidth)
-            const blockHeight = Math.max(lineHeight, chunks.length * lineHeight)
-            ensurePage(blockHeight)
-            pdf.text(chunks, marginX, cursorY)
-            cursorY += blockHeight
-          })
-
-          cursorY += gapAfter
-        }
-
         const valorTotalDestinado = processosSelecionadosComValor.reduce(
           (acc, processo) => acc + Number(processo.valorDestinadoSelecionado || 0),
           0,
@@ -2216,22 +2599,22 @@ function App() {
         const cnpjEmpresa = String(empresaSelecionadaInfo?.cnpj || '').trim() || 'Não informado'
         const nomeEntidade = String(entidade?.nome || '').trim() || 'Não informado'
         const cnpjEntidade = String(entidade?.cnpj || '').trim() || 'Não informado'
-        const chavePixEntidade = String(entidade?.chavePix || '').trim() || 'Não informada'
-        // Montar dados bancários conforme o novo modelo
-        let dadosBancariosEntidade = '--'
-        if (entidade?.formaPagamento === 'PIX') {
-          dadosBancariosEntidade = `Pix: ${entidade?.pix || '--'}`
-        } else if (entidade?.formaPagamento === 'ContaBancaria') {
-          const banco = entidade?.banco || '--'
-          const agencia = entidade?.agencia || '--'
-          const conta = entidade?.conta || '--'
-          const contaDigito = entidade?.contaDigito ? `-${entidade.contaDigito}` : ''
-          dadosBancariosEntidade = `Banco: ${banco} | Agência: ${agencia} | Conta: ${conta}${contaDigito}`
-        } else if (entidade?.formaPagamento === 'Outro') {
-          dadosBancariosEntidade = `Outro: ${entidade?.outrosDados || '--'}`
-        } else if (entidade?.formaPagamento === 'Boleto') {
-          dadosBancariosEntidade = 'Boleto'
-        }
+        
+        const formaPagamentoEntidade = String(entidade?.formaPagamento || '').trim()
+        const bancoEntidade = String(entidade?.banco || '').trim()
+        const agenciaEntidade = String(entidade?.agencia || '').trim()
+        const contaEntidade = String(entidade?.conta || '').trim()
+        const chavePixEntidade = String(entidade?.chavePix || '').trim()
+        const dadosBancariosEntidade = String(entidade?.dadosBancarios || '').trim()
+
+        let recebimentoStr = 'Não informado'
+        if (formaPagamentoEntidade === 'PIX') recebimentoStr = `PIX - Chave: ${chavePixEntidade}`
+        else if (formaPagamentoEntidade === 'Conta Bancária') recebimentoStr = `Conta Bancária - Banco: ${bancoEntidade}, Agência: ${agenciaEntidade}, Conta: ${contaEntidade}`
+        else if (formaPagamentoEntidade === 'Boleto') recebimentoStr = `Boleto`
+        else if (formaPagamentoEntidade === 'Outro') recebimentoStr = `Outro - ${dadosBancariosEntidade}`
+        else if (chavePixEntidade) recebimentoStr = `PIX - Chave: ${chavePixEntidade}`
+        else if (dadosBancariosEntidade) recebimentoStr = `Dados bancários: ${dadosBancariosEntidade}`
+
         const contatoEntidade = String(entidade?.contato || '').trim() || 'Não informado'
         const responsavelEntidade = String(entidade?.responsavel || '').trim() || 'Não informado'
         const municipioEntidade = String(entidade?.municipio || '').trim() || 'Nao informado'
@@ -2242,70 +2625,38 @@ function App() {
         const dataEmissaoDocumento = formatDateBR(new Date().toISOString())
         const usuarioResponsavelDocumento =
           userProfile?.nome || user?.displayName || user?.email || 'Usuário responsável'
-
-        writeLines([
-          'Ao operador lotérico autorizado,',
-          `Encaminham-se, para ciência e providências, as informações da destinação social registrada na competência ${competenciaDocumento}.`,
-          `Data da solicitação: ${solicitacaoDataDocumento}.`,
-        ])
-
-        writeLines('Dados do operador lotérico', { fontStyle: 'bold', gapAfter: 1 })
-        writeLines([`Razão social: ${nomeEmpresa}`, `CNPJ: ${cnpjEmpresa}`], {
-          gapAfter: sectionGap,
-        })
-
-        writeLines('Dados da entidade destinatária', { fontStyle: 'bold', gapAfter: 1 })
-        writeLines(
-          [
-            `Entidade: ${nomeEntidade}`,
-            `CNPJ: ${cnpjEntidade}`,
-            `Municipio: ${municipioEntidade}`,
-            `Estado: ${estadoEntidade}`,
-            `Responsável: ${responsavelEntidade}`,
-            `Contato: ${contatoEntidade}`,
-            `Forma de pagamento: ${entidade?.formaPagamento || '--'}`,
-            dadosBancariosEntidade,
-          ],
-          { gapAfter: sectionGap },
-        )
-
-        writeLines('Processos e valores destinados', { fontStyle: 'bold', gapAfter: 1 })
-
-        processosSelecionadosComValor.forEach((processo, index) => {
-          writeLines(
-            [
-              `${index + 1}. Processo: ${String(processo.processoId || '').trim() || 'Não informado'}`,
-              `Produto: ${String(processo.produto || '').trim() || 'Não informado'}`,
-              `Termo: ${String(processo.termo || '').trim() || 'Não informado'}`,
-              `Valor destinado: ${formatCurrency(processo.valorDestinadoSelecionado)}`,
-            ],
-            { gapAfter: 1 },
-          )
-        })
-
-        writeLines(`Valor total destinado: ${formatCurrency(valorTotalDestinado)}`, {
-          fontStyle: 'bold',
-          gapAfter: sectionGap,
-        })
-
-        writeLines([
-          `Documento emitido em: ${dataEmissaoDocumento}.`,
-          `Responsável pelo registro: ${usuarioResponsavelDocumento}.`,
-        ], { gapAfter: sectionGap })
-
         const observacaoDocumento = String(destForm.observacao || '').trim()
-        if (observacaoDocumento) {
-          writeLines('Observação', { fontStyle: 'bold', gapAfter: 1 })
-          writeLines(observacaoDocumento, { gapAfter: sectionGap })
-        }
 
-        writeLines('Documento emitido para instrução e comprovação administrativa.')
+        const pdf = generateDestinacaoPdf({
+          nomeEmpresa,
+          cnpjEmpresa,
+          nomeEntidade,
+          cnpjEntidade,
+          municipioEntidade,
+          estadoEntidade,
+          responsavelEntidade,
+          contatoEntidade,
+          recebimentoStr,
+          processos: processosSelecionadosComValor.map(p => ({
+            processoId: p.processoId,
+            produto: p.produto,
+            termo: p.termo,
+            valorDestinado: p.valorDestinadoSelecionado
+          })),
+          valorTotalDestinado,
+          competenciaDocumento,
+          solicitacaoDataDocumento,
+          dataEmissaoDocumento,
+          usuarioResponsavelDocumento,
+          observacaoDocumento
+        })
 
         const empresaSlug = slugifyFileName(nomeEmpresa) || 'operador-loterico'
         const competenciaSlug = slugifyFileName(competenciaDocumento.replace('/', '-')) || 'sem-competencia'
         pdf.save(`encaminhamento-destinacao-${empresaSlug}-${competenciaSlug}.pdf`)
         documentoGerado = true
-      } catch {
+      } catch (e) {
+        console.error(e)
         toast.error('Destinações salvas, mas não foi possível gerar o documento de encaminhamento.')
       }
 
@@ -2630,65 +2981,28 @@ function App() {
 
       const valorDestinado = Number(destinacaoItem.valorDestinado || 0)
 
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
-      const pageWidth = pdf.internal.pageSize.getWidth()
-      const pageHeight = pdf.internal.pageSize.getHeight()
-      const marginX = 14
-      const contentWidth = pageWidth - marginX * 2
-      const lineHeight = 5.5
-      const sectionGap = 3.5
-      let cursorY = drawInstitutionalPdfHeader(pdf, 'Documento de Encaminhamento de Destinação Social')
-
-      function ensurePage(requiredHeight = lineHeight) {
-        if (cursorY + requiredHeight > pageHeight - 16) {
-          pdf.addPage()
-          cursorY = 16
-        }
-      }
-
-      function writeLines(text, options = {}) {
-        const size = options.size || 11
-        const fontStyle = options.fontStyle || 'normal'
-        const gapAfter = options.gapAfter ?? 2
-        const lines = Array.isArray(text) ? text : [text]
-
-        pdf.setFont('helvetica', fontStyle)
-        pdf.setFontSize(size)
-
-        lines.forEach((line) => {
-          const chunks = pdf.splitTextToSize(String(line || ''), contentWidth)
-          const blockHeight = Math.max(lineHeight, chunks.length * lineHeight)
-          ensurePage(blockHeight)
-          pdf.text(chunks, marginX, cursorY)
-          cursorY += blockHeight
-        })
-
-        cursorY += gapAfter
-      }
-
       const nomeEmpresa = String(destinacaoItem.empresa || 'Operador lotérico não informado').trim()
       const cnpjEmpresa = String(empresaRelacionada?.cnpj || '').trim() || 'Não informado'
       const nomeEntidade = String(destinacaoItem.entidadeNome || '').trim() || 'Não informado'
       const cnpjEntidade = String(entidadeRelacionada?.cnpj || '').trim() || 'Não informado'
-      const chavePixEntidade = String(entidadeRelacionada?.chavePix || '').trim() || 'Não informada'
-      // Montar dados bancários conforme o novo modelo
-      let dadosBancariosEntidade = '--'
-      if (entidadeRelacionada?.formaPagamento === 'PIX') {
-        dadosBancariosEntidade = `Pix: ${entidadeRelacionada?.pix || '--'}`
-      } else if (entidadeRelacionada?.formaPagamento === 'ContaBancaria') {
-        const banco = entidadeRelacionada?.banco || '--'
-        const agencia = entidadeRelacionada?.agencia || '--'
-        const conta = entidadeRelacionada?.conta || '--'
-        const contaDigito = entidadeRelacionada?.contaDigito ? `-${entidadeRelacionada.contaDigito}` : ''
-        dadosBancariosEntidade = `Banco: ${banco} | Agência: ${agencia} | Conta: ${conta}${contaDigito}`
-      } else if (entidadeRelacionada?.formaPagamento === 'Outro') {
-        dadosBancariosEntidade = `Outro: ${entidadeRelacionada?.outrosDados || '--'}`
-      } else if (entidadeRelacionada?.formaPagamento === 'Boleto') {
-        dadosBancariosEntidade = 'Boleto'
-      }
+      
+      const formaPagamentoEntidade = String(entidadeRelacionada?.formaPagamento || '').trim()
+      const bancoEntidade = String(entidadeRelacionada?.banco || '').trim()
+      const agenciaEntidade = String(entidadeRelacionada?.agencia || '').trim()
+      const contaEntidade = String(entidadeRelacionada?.conta || '').trim()
+      const chavePixEntidade = String(entidadeRelacionada?.chavePix || '').trim()
+      const dadosBancariosEntidade = String(entidadeRelacionada?.dadosBancarios || '').trim()
+
+      let recebimentoStr = 'Não informado'
+      if (formaPagamentoEntidade === 'PIX') recebimentoStr = `PIX - Chave: ${chavePixEntidade}`
+      else if (formaPagamentoEntidade === 'Conta Bancária') recebimentoStr = `Conta Bancária - Banco: ${bancoEntidade}, Agência: ${agenciaEntidade}, Conta: ${contaEntidade}`
+      else if (formaPagamentoEntidade === 'Boleto') recebimentoStr = `Boleto`
+      else if (formaPagamentoEntidade === 'Outro') recebimentoStr = `Outro - ${dadosBancariosEntidade}`
+      else if (chavePixEntidade) recebimentoStr = `PIX - Chave: ${chavePixEntidade}`
+      else if (dadosBancariosEntidade) recebimentoStr = `Dados bancários: ${dadosBancariosEntidade}`
+
       const contatoEntidade = String(entidadeRelacionada?.contato || '').trim() || 'Não informado'
-      const responsavelEntidade =
-        String(entidadeRelacionada?.responsavel || '').trim() || 'Não informado'
+      const responsavelEntidade = String(entidadeRelacionada?.responsavel || '').trim() || 'Não informado'
       const municipioEntidade = String(entidadeRelacionada?.municipio || '').trim() || 'Nao informado'
       const estadoEntidade = String(entidadeRelacionada?.estado || '').trim() || 'Nao informado'
 
@@ -2697,55 +3011,31 @@ function App() {
       const dataEmissaoDocumento = formatDateBR(new Date().toISOString())
       const usuarioResponsavelDocumento =
         userProfile?.nome || user?.displayName || user?.email || 'Usuário responsável'
+      const observacaoDocumento = String(destinacaoItem.observacao || '').trim()
 
-      writeLines([
-        'Ao operador lotérico autorizado,',
-        `Encaminham-se, para ciência e providências, as informações da destinação social registrada na competência ${competenciaDocumento}.`,
-        `Data da solicitação: ${solicitacaoDataDocumento}.`,
-      ])
-
-      writeLines('Dados do operador lotérico', { fontStyle: 'bold', gapAfter: 1 })
-      writeLines([`Razão social: ${nomeEmpresa}`, `CNPJ: ${cnpjEmpresa}`], {
-        gapAfter: sectionGap,
+      const pdf = generateDestinacaoPdf({
+        nomeEmpresa,
+        cnpjEmpresa,
+        nomeEntidade,
+        cnpjEntidade,
+        municipioEntidade,
+        estadoEntidade,
+        responsavelEntidade,
+        contatoEntidade,
+        recebimentoStr,
+        processos: [{
+          processoId: destinacaoItem.processoId,
+          produto: destinacaoItem.produto,
+          termo: destinacaoItem.termo,
+          valorDestinado: valorDestinado
+        }],
+        valorTotalDestinado: valorDestinado,
+        competenciaDocumento,
+        solicitacaoDataDocumento,
+        dataEmissaoDocumento,
+        usuarioResponsavelDocumento,
+        observacaoDocumento
       })
-
-      writeLines('Dados da entidade destinatária', { fontStyle: 'bold', gapAfter: 1 })
-      writeLines(
-        [
-          `Entidade: ${nomeEntidade}`,
-          `CNPJ: ${cnpjEntidade}`,
-          `Municipio: ${municipioEntidade}`,
-          `Estado: ${estadoEntidade}`,
-          `Responsável: ${responsavelEntidade}`,
-          `Contato: ${contatoEntidade}`,
-          `Forma de pagamento: ${entidadeRelacionada?.formaPagamento || '--'}`,
-          dadosBancariosEntidade,
-        ],
-        { gapAfter: sectionGap },
-      )
-
-      writeLines('Processos e valores destinados', { fontStyle: 'bold', gapAfter: 1 })
-      writeLines(
-        [
-          `1. Processo: ${String(destinacaoItem.processoId || '').trim() || 'Não informado'}`,
-          `Produto: ${String(destinacaoItem.produto || '').trim() || 'Não informado'}`,
-          `Termo: ${String(destinacaoItem.termo || '').trim() || 'Não informado'}`,
-          `Valor destinado: ${formatCurrency(valorDestinado)}`,
-        ],
-        { gapAfter: 1 },
-      )
-
-      writeLines(`Valor total destinado: ${formatCurrency(valorDestinado)}`, {
-        fontStyle: 'bold',
-        gapAfter: sectionGap,
-      })
-
-      writeLines([
-        `Documento emitido em: ${dataEmissaoDocumento}.`,
-        `Responsável pelo registro: ${usuarioResponsavelDocumento}.`,
-      ], { gapAfter: sectionGap })
-
-      writeLines('Documento emitido para instrução e comprovação administrativa.')
 
       const empresaSlug = slugifyFileName(nomeEmpresa) || 'operador-loterico'
       const competenciaSlug = slugifyFileName(competenciaDocumento.replace('/', '-')) || 'sem-competencia'
@@ -2753,7 +3043,8 @@ function App() {
 
       pdf.save(`encaminhamento-destinacao-${empresaSlug}-${competenciaSlug}-${processoSlug}.pdf`)
       toast.success('PDF de destinação baixado novamente.')
-    } catch {
+    } catch (e) {
+      console.error(e)
       toast.error('Não foi possível gerar o PDF da destinação.')
     }
   }
@@ -2888,12 +3179,11 @@ function App() {
     const normalizedEntidadeNome = entidadeForm.nome.trim().toLowerCase()
     const cnpjLimpo = sanitizeCNPJ(entidadeForm.cnpj)
     const formaPagamento = entidadeForm.formaPagamento
-    const pix = entidadeForm.pix.trim()
-    const banco = entidadeForm.banco.trim()
-    const agencia = entidadeForm.agencia.trim()
-    const conta = entidadeForm.conta.trim()
-    const contaDigito = entidadeForm.contaDigito.trim()
-    const outrosDados = entidadeForm.outrosDados.trim()
+    const chavePix = entidadeForm.chavePix.trim()
+    const dadosBancarios = entidadeForm.dadosBancarios.trim()
+    const banco = String(entidadeForm.banco || '').trim()
+    const agencia = String(entidadeForm.agencia || '').trim()
+    const conta = String(entidadeForm.conta || '').trim()
     const estado = String(entidadeForm.estado || '').trim().toUpperCase()
     const municipio = String(entidadeForm.municipio || '').trim()
 
@@ -2912,22 +3202,18 @@ function App() {
       return
     }
 
+    if (formaPagamento === 'PIX' && !chavePix) {
+      toast.error('Informe a chave Pix.')
+      return
+    }
 
-    // Validação dos campos bancários
-    if (!formaPagamento) {
-      toast.error('Selecione a forma de pagamento da entidade.')
+    if (formaPagamento === 'Conta Bancária' && (!banco || !agencia || !conta)) {
+      toast.error('Informe banco, agência e conta bancária.')
       return
     }
-    if (formaPagamento === 'PIX' && !pix) {
-      toast.error('Informe a chave Pix da entidade.')
-      return
-    }
-    if (formaPagamento === 'ContaBancaria' && (!banco || !agencia || !conta || !contaDigito)) {
-      toast.error('Preencha todos os campos bancários: banco, agência, conta e dígito.')
-      return
-    }
-    if (formaPagamento === 'Outro' && !outrosDados) {
-      toast.error('Descreva como a entidade recebe pagamentos.')
+
+    if (formaPagamento === 'Outro' && !dadosBancarios) {
+      toast.error('Informe os detalhes bancários em "Outro".')
       return
     }
 
@@ -2965,12 +3251,11 @@ function App() {
         contato: entidadeForm.contato.trim(),
         responsavel: entidadeForm.responsavel.trim(),
         formaPagamento,
-        pix: formaPagamento === 'PIX' ? pix : '',
-        banco: formaPagamento === 'ContaBancaria' ? banco : '',
-        agencia: formaPagamento === 'ContaBancaria' ? agencia : '',
-        conta: formaPagamento === 'ContaBancaria' ? conta : '',
-        contaDigito: formaPagamento === 'ContaBancaria' ? contaDigito : '',
-        outrosDados: formaPagamento === 'Outro' ? outrosDados : '',
+        chavePix: formaPagamento === 'PIX' ? chavePix : '',
+        dadosBancarios: formaPagamento === 'Outro' || !['PIX', 'Conta Bancária', 'Boleto'].includes(formaPagamento) ? dadosBancarios : '',
+        banco: formaPagamento === 'Conta Bancária' ? banco : '',
+        agencia: formaPagamento === 'Conta Bancária' ? agencia : '',
+        conta: formaPagamento === 'Conta Bancária' ? conta : '',
         descricaoCategoria: categoriaDescriptions[entidadeForm.categoria] || '',
         updatedAt: timestamp,
         updatedBy: user.uid,
@@ -3030,12 +3315,16 @@ function App() {
       nome: String(entry?.nome || ''),
       categoria: String(entry?.categoria || 'Assistencia'),
       cnpj: maskCNPJ(entry?.cnpj || ''),
-      estado: String(entry?.estado || ''),
+      estado: String(entry?.estado || '').trim().toUpperCase(),
       municipio: String(entry?.municipio || ''),
       contato: String(entry?.contato || ''),
       responsavel: String(entry?.responsavel || ''),
+      formaPagamento: String(entry?.formaPagamento || (entry?.chavePix ? 'PIX' : (entry?.banco || entry?.agencia ? 'Conta Bancária' : (entry?.dadosBancarios ? 'Outro' : 'PIX')))),
       chavePix: String(entry?.chavePix || ''),
       dadosBancarios: String(entry?.dadosBancarios || ''),
+      banco: String(entry?.banco || ''),
+      agencia: String(entry?.agencia || ''),
+      conta: String(entry?.conta || ''),
     })
     setIsEntidadeModalOpen(false)
   }
@@ -5025,38 +5314,104 @@ function App() {
                         </div>
 
                         <div>
-                          <label className="field-label" htmlFor="entidadeChavePix">
-                            Chave Pix
+                          <label className="field-label" htmlFor="entidadeFormaPagamento">
+                            Forma de pagamento
                           </label>
-                          <input
-                            id="entidadeChavePix"
+                          <select
+                            id="entidadeFormaPagamento"
                             className="field-input"
-                            value={entidadeForm.chavePix}
+                            value={entidadeForm.formaPagamento}
                             onChange={(event) =>
-                              setEntidadeForm((current) => ({ ...current, chavePix: event.target.value }))
+                              setEntidadeForm((current) => ({ ...current, formaPagamento: event.target.value }))
                             }
-                            placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória"
-                          />
+                          >
+                            <option value="PIX">PIX</option>
+                            <option value="Conta Bancária">Conta Bancária</option>
+                            <option value="Boleto">Boleto</option>
+                            <option value="Outro">Outro</option>
+                          </select>
                         </div>
 
-                        <div className="md:col-span-2 xl:col-span-3">
-                          <label className="field-label" htmlFor="entidadeDadosBancarios">
-                            Dados bancários para transferência
-                          </label>
-                          <textarea
-                            id="entidadeDadosBancarios"
-                            className="field-input min-h-24"
-                            value={entidadeForm.dadosBancarios}
-                            onChange={(event) =>
-                              setEntidadeForm((current) => ({ ...current, dadosBancarios: event.target.value }))
-                            }
-                            placeholder="Banco, agência, conta e tipo"
-                          />
-                        </div>
+                        {entidadeForm.formaPagamento === 'PIX' && (
+                          <div>
+                            <label className="field-label" htmlFor="entidadeChavePix">
+                              Chave Pix
+                            </label>
+                            <input
+                              id="entidadeChavePix"
+                              className="field-input"
+                              value={entidadeForm.chavePix}
+                              onChange={(event) =>
+                                setEntidadeForm((current) => ({ ...current, chavePix: event.target.value }))
+                              }
+                              placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória"
+                            />
+                          </div>
+                        )}
 
-                        <p className="text-xs text-zinc-500 md:col-span-2 xl:col-span-3">
-                          Obrigatório informar CNPJ e ao menos Pix ou dados bancários.
-                        </p>
+                        {entidadeForm.formaPagamento === 'Conta Bancária' && (
+                          <>
+                            <div>
+                              <label className="field-label" htmlFor="entidadeBanco">
+                                Banco
+                              </label>
+                              <input
+                                id="entidadeBanco"
+                                className="field-input"
+                                value={entidadeForm.banco}
+                                onChange={(event) =>
+                                  setEntidadeForm((current) => ({ ...current, banco: event.target.value }))
+                                }
+                                placeholder="Nome ou código do banco"
+                              />
+                            </div>
+                            <div>
+                              <label className="field-label" htmlFor="entidadeAgencia">
+                                Agência
+                              </label>
+                              <input
+                                id="entidadeAgencia"
+                                className="field-input"
+                                value={entidadeForm.agencia}
+                                onChange={(event) =>
+                                  setEntidadeForm((current) => ({ ...current, agencia: event.target.value }))
+                                }
+                                placeholder="Ex: 0001"
+                              />
+                            </div>
+                            <div>
+                              <label className="field-label" htmlFor="entidadeConta">
+                                Conta com dígito
+                              </label>
+                              <input
+                                id="entidadeConta"
+                                className="field-input"
+                                value={entidadeForm.conta}
+                                onChange={(event) =>
+                                  setEntidadeForm((current) => ({ ...current, conta: event.target.value }))
+                                }
+                                placeholder="Ex: 12345-6"
+                              />
+                            </div>
+                          </>
+                        )}
+
+                        {entidadeForm.formaPagamento === 'Outro' && (
+                          <div className="md:col-span-2 xl:col-span-3">
+                            <label className="field-label" htmlFor="entidadeDadosBancarios">
+                              Detalhes do pagamento
+                            </label>
+                            <textarea
+                              id="entidadeDadosBancarios"
+                              className="field-input min-h-24"
+                              value={entidadeForm.dadosBancarios}
+                              onChange={(event) =>
+                                setEntidadeForm((current) => ({ ...current, dadosBancarios: event.target.value }))
+                              }
+                              placeholder="Forneça os detalhes adicionais"
+                            />
+                          </div>
+                        )}
 
                         <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 md:col-span-2 xl:col-span-3">
                           {categoriaTexto}
@@ -5130,15 +5485,29 @@ function App() {
                                 <dd>{entry.municipio || '--'}</dd>
                               </div>
                               <div>
-                                <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Chave Pix</dt>
-                                <dd>{entry.chavePix || '--'}</dd>
+                                <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Forma de Recebimento</dt>
+                                <dd>{entry.formaPagamento || (entry.chavePix ? 'PIX' : (entry.dadosBancarios ? 'Outro' : '--'))}</dd>
                               </div>
-                              <div className="sm:col-span-2">
-                                <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">
-                                  Dados bancários
-                                </dt>
-                                <dd className="whitespace-pre-wrap">{entry.dadosBancarios || '--'}</dd>
-                              </div>
+                              {entry.formaPagamento === 'PIX' || (!entry.formaPagamento && entry.chavePix) ? (
+                                <div>
+                                  <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Chave Pix</dt>
+                                  <dd>{entry.chavePix || '--'}</dd>
+                                </div>
+                              ) : null}
+                              {entry.formaPagamento === 'Conta Bancária' && (
+                                <div className="sm:col-span-2">
+                                  <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Conta Bancária</dt>
+                                  <dd>Banco: {entry.banco || '--'} | Ag: {entry.agencia || '--'} | CC: {entry.conta || '--'}</dd>
+                                </div>
+                              )}
+                              {(entry.formaPagamento === 'Outro' || (!entry.formaPagamento && entry.dadosBancarios)) && (
+                                <div className="sm:col-span-2">
+                                  <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">
+                                    Detalhes de recebimento
+                                  </dt>
+                                  <dd className="whitespace-pre-wrap">{entry.dadosBancarios || '--'}</dd>
+                                </div>
+                              )}
                             </dl>
                           </li>
                         ))}
@@ -5804,6 +6173,35 @@ function App() {
                                     data.
                                   </p>
                                 )}
+
+                                <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                                  <p className="mb-3 font-semibold text-zinc-900">Detalhamento por Entidade</p>
+                                  <ul className="space-y-2">
+                                    {Array.from(
+                                      destinacoesRelatorio.reduce((mapa, dest) => {
+                                        const entId = dest.entidadeId
+                                        const entidadeCadastro = entidadesById[entId]
+                                        const nomeEntidade = String(dest.entidadeNome || entidadeCadastro?.nome || 'Entidade não identificada').trim()
+                                        
+                                        if (!mapa.has(nomeEntidade)) {
+                                          mapa.set(nomeEntidade, { nome: nomeEntidade, valorDestinado: 0, valorPago: 0 })
+                                        }
+                                        const item = mapa.get(nomeEntidade)
+                                        item.valorDestinado += Number(dest.valorDestinado || 0)
+                                        item.valorPago += Number(dest.valorPagoAcumulado || 0)
+                                        return mapa
+                                      }, new Map()).values()
+                                    ).map((item, index) => (
+                                      <li key={index} className="flex items-center justify-between border-b border-slate-200/60 pb-2 last:border-0 last:pb-0">
+                                        <span className="font-medium text-zinc-700">{item.nome}</span>
+                                        <div className="text-right">
+                                          <p className="text-sm font-semibold text-zinc-900">Destinado: {formatCurrency(item.valorDestinado)}</p>
+                                          <p className="text-xs text-zinc-500">Pago: {formatCurrency(item.valorPago)}</p>
+                                        </div>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
                               </>
                             ) : (
                               <>
@@ -6382,38 +6780,104 @@ function App() {
               </div>
 
               <div>
-                <label className="field-label" htmlFor="modalEntidadePix">
-                  Chave Pix
+                <label className="field-label" htmlFor="modalEntidadeFormaPagamento">
+                  Forma de pagamento
                 </label>
-                <input
-                  id="modalEntidadePix"
+                <select
+                  id="modalEntidadeFormaPagamento"
                   className="field-input"
-                  value={entidadeForm.chavePix}
+                  value={entidadeForm.formaPagamento}
                   onChange={(event) =>
-                    setEntidadeForm((current) => ({ ...current, chavePix: event.target.value }))
+                    setEntidadeForm((current) => ({ ...current, formaPagamento: event.target.value }))
                   }
-                  placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória"
-                />
+                >
+                  <option value="PIX">PIX</option>
+                  <option value="Conta Bancária">Conta Bancária</option>
+                  <option value="Boleto">Boleto</option>
+                  <option value="Outro">Outro</option>
+                </select>
               </div>
 
-              <div className="sm:col-span-2">
-                <label className="field-label" htmlFor="modalDadosBancariosEntidade">
-                  Dados bancários para transferência
-                </label>
-                <textarea
-                  id="modalDadosBancariosEntidade"
-                  className="field-input min-h-24"
-                  value={entidadeForm.dadosBancarios}
-                  onChange={(event) =>
-                    setEntidadeForm((current) => ({ ...current, dadosBancarios: event.target.value }))
-                  }
-                  placeholder="Banco, agência, conta e tipo"
-                />
-              </div>
+              {entidadeForm.formaPagamento === 'PIX' && (
+                <div>
+                  <label className="field-label" htmlFor="modalEntidadePix">
+                    Chave Pix
+                  </label>
+                  <input
+                    id="modalEntidadePix"
+                    className="field-input"
+                    value={entidadeForm.chavePix}
+                    onChange={(event) =>
+                      setEntidadeForm((current) => ({ ...current, chavePix: event.target.value }))
+                    }
+                    placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória"
+                  />
+                </div>
+              )}
 
-              <p className="text-xs text-zinc-500 sm:col-span-2">
-                Obrigatório informar CNPJ e ao menos Pix ou dados bancários.
-              </p>
+              {entidadeForm.formaPagamento === 'Conta Bancária' && (
+                <>
+                  <div>
+                    <label className="field-label" htmlFor="modalEntidadeBanco">
+                      Banco
+                    </label>
+                    <input
+                      id="modalEntidadeBanco"
+                      className="field-input"
+                      value={entidadeForm.banco}
+                      onChange={(event) =>
+                        setEntidadeForm((current) => ({ ...current, banco: event.target.value }))
+                      }
+                      placeholder="Nome ou código do banco"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label" htmlFor="modalEntidadeAgencia">
+                      Agência
+                    </label>
+                    <input
+                      id="modalEntidadeAgencia"
+                      className="field-input"
+                      value={entidadeForm.agencia}
+                      onChange={(event) =>
+                        setEntidadeForm((current) => ({ ...current, agencia: event.target.value }))
+                      }
+                      placeholder="Ex: 0001"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="field-label" htmlFor="modalEntidadeConta">
+                      Conta com dígito
+                    </label>
+                    <input
+                      id="modalEntidadeConta"
+                      className="field-input"
+                      value={entidadeForm.conta}
+                      onChange={(event) =>
+                        setEntidadeForm((current) => ({ ...current, conta: event.target.value }))
+                      }
+                      placeholder="Ex: 12345-6"
+                    />
+                  </div>
+                </>
+              )}
+
+              {entidadeForm.formaPagamento === 'Outro' && (
+                <div className="sm:col-span-2">
+                  <label className="field-label" htmlFor="modalDadosBancariosEntidade">
+                    Detalhes do pagamento
+                  </label>
+                  <textarea
+                    id="modalDadosBancariosEntidade"
+                    className="field-input min-h-24"
+                    value={entidadeForm.dadosBancarios}
+                    onChange={(event) =>
+                      setEntidadeForm((current) => ({ ...current, dadosBancarios: event.target.value }))
+                    }
+                    placeholder="Forneça os detalhes adicionais"
+                  />
+                </div>
+              )}
 
               <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 sm:col-span-2">
                 {categoriaTexto}
