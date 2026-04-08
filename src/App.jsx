@@ -272,8 +272,11 @@ function createInitialEntidadeForm() {
     municipio: '',
     contato: '',
     responsavel: '',
+    formaPagamento: '', // PIX, ContaBancaria, Boleto, Outro
     chavePix: '',
-    dadosBancarios: '',
+    agencia: '',
+    conta: '',
+    outroPagamento: '',
   }
 }
 
@@ -2837,8 +2840,11 @@ function App() {
 
     const normalizedEntidadeNome = entidadeForm.nome.trim().toLowerCase()
     const cnpjLimpo = sanitizeCNPJ(entidadeForm.cnpj)
-    const chavePix = entidadeForm.chavePix.trim()
-    const dadosBancarios = entidadeForm.dadosBancarios.trim()
+    const chavePix = entidadeForm.chavePix?.trim() || ''
+    const agencia = entidadeForm.agencia?.trim() || ''
+    const conta = entidadeForm.conta?.trim() || ''
+    const outroPagamento = entidadeForm.outroPagamento?.trim() || ''
+    const formaPagamento = entidadeForm.formaPagamento || ''
     const estado = String(entidadeForm.estado || '').trim().toUpperCase()
     const municipio = String(entidadeForm.municipio || '').trim()
 
@@ -2857,8 +2863,21 @@ function App() {
       return
     }
 
-    if (!chavePix && !dadosBancarios) {
-      toast.error('Informe a chave Pix ou os dados bancários para transferência.')
+    // Payment validation
+    if (!formaPagamento) {
+      toast.error('Selecione a forma de pagamento.')
+      return
+    }
+    if (formaPagamento === 'PIX' && !chavePix) {
+      toast.error('Informe a chave Pix.')
+      return
+    }
+    if (formaPagamento === 'ContaBancaria' && (!agencia || !conta)) {
+      toast.error('Informe agência e conta.')
+      return
+    }
+    if (formaPagamento === 'Outro' && !outroPagamento) {
+      toast.error('Descreva a forma de pagamento.')
       return
     }
 
@@ -2895,8 +2914,11 @@ function App() {
         municipio,
         contato: entidadeForm.contato.trim(),
         responsavel: entidadeForm.responsavel.trim(),
-        chavePix,
-        dadosBancarios,
+        formaPagamento,
+        chavePix: formaPagamento === 'PIX' ? chavePix : '',
+        agencia: formaPagamento === 'ContaBancaria' ? agencia : '',
+        conta: formaPagamento === 'ContaBancaria' ? conta : '',
+        outroPagamento: formaPagamento === 'Outro' ? outroPagamento : '',
         descricaoCategoria: categoriaDescriptions[entidadeForm.categoria] || '',
         updatedAt: timestamp,
         updatedBy: user.uid,
@@ -2952,16 +2974,34 @@ function App() {
     setActiveCadastroTab('entidades')
     setIsEntidadeFormVisible(true)
     setEditingEntidadeId(entry.id)
+    // Backward compatibility: migrate old entities
+    let formaPagamento = ''
+    if (entry?.formaPagamento) {
+      formaPagamento = entry.formaPagamento
+    } else if (entry?.chavePix) {
+      formaPagamento = 'PIX'
+    } else if (entry?.agencia || entry?.conta) {
+      formaPagamento = 'ContaBancaria'
+    } else if (entry?.dadosBancarios) {
+      formaPagamento = 'ContaBancaria'
+    } else if (entry?.outroPagamento) {
+      formaPagamento = 'Outro'
+    } else {
+      formaPagamento = ''
+    }
     setEntidadeForm({
       nome: String(entry?.nome || ''),
       categoria: String(entry?.categoria || 'Assistencia'),
       cnpj: maskCNPJ(entry?.cnpj || ''),
-      estado: String(entry?.estado || ''),
+      estado: String(entry?.estado || '').trim().toUpperCase(),
       municipio: String(entry?.municipio || ''),
       contato: String(entry?.contato || ''),
       responsavel: String(entry?.responsavel || ''),
+      formaPagamento,
       chavePix: String(entry?.chavePix || ''),
-      dadosBancarios: String(entry?.dadosBancarios || ''),
+      agencia: String(entry?.agencia || ''),
+      conta: String(entry?.conta || ''),
+      outroPagamento: String(entry?.outroPagamento || ''),
     })
     setIsEntidadeModalOpen(false)
   }
