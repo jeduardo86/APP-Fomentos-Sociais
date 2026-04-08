@@ -234,35 +234,87 @@ export function CadastroMenuSection({
                 </select>
               </div>
 
-              <div>
-                <label className="field-label" htmlFor="entidadeChavePix">
-                  Chave Pix
-                </label>
-                <input
-                  id="entidadeChavePix"
-                  className="field-input"
-                  value={entidadeForm.chavePix}
-                  onChange={(event) =>
-                    setEntidadeForm((current) => ({ ...current, chavePix: event.target.value }))
-                  }
-                  placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória"
-                />
-              </div>
 
               <div>
-                <label className="field-label" htmlFor="entidadeDadosBancarios">
-                  Dados bancários para transferência
+                <label className="field-label" htmlFor="entidadeFormaPagamento">
+                  Forma de pagamento
                 </label>
-                <textarea
-                  id="entidadeDadosBancarios"
-                  className="field-input min-h-24"
-                  value={entidadeForm.dadosBancarios}
-                  onChange={(event) =>
-                    setEntidadeForm((current) => ({ ...current, dadosBancarios: event.target.value }))
-                  }
-                  placeholder="Banco, agência, conta e tipo"
-                />
+                <select
+                  id="entidadeFormaPagamento"
+                  className="field-input"
+                  value={entidadeForm.formaPagamento || ''}
+                  onChange={e => {
+                    const value = e.target.value
+                    setEntidadeForm(current => ({
+                      ...current,
+                      formaPagamento: value,
+                      chavePix: value === 'PIX' ? current.chavePix : '',
+                      agencia: value === 'ContaBancaria' ? current.agencia : '',
+                      conta: value === 'ContaBancaria' ? current.conta : '',
+                      outroPagamento: value === 'Outro' ? current.outroPagamento : '',
+                    }))
+                  }}
+                >
+                  <option value="">Selecione...</option>
+                  <option value="PIX">Pix</option>
+                  <option value="ContaBancaria">Conta Bancária</option>
+                  <option value="Boleto">Boleto</option>
+                  <option value="Outro">Outro</option>
+                </select>
               </div>
+
+              {entidadeForm.formaPagamento === 'PIX' && (
+                <div>
+                  <label className="field-label" htmlFor="entidadeChavePix">Chave Pix</label>
+                  <input
+                    id="entidadeChavePix"
+                    className="field-input"
+                    value={entidadeForm.chavePix || ''}
+                    onChange={e => setEntidadeForm(current => ({ ...current, chavePix: e.target.value }))}
+                    placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória"
+                  />
+                </div>
+              )}
+
+              {entidadeForm.formaPagamento === 'ContaBancaria' && (
+                <>
+                  <div>
+                    <label className="field-label" htmlFor="entidadeAgencia">Agência</label>
+                    <input
+                      id="entidadeAgencia"
+                      className="field-input"
+                      value={entidadeForm.agencia || ''}
+                      onChange={e => setEntidadeForm(current => ({ ...current, agencia: e.target.value }))}
+                      placeholder="Agência"
+                    />
+                  </div>
+                  <div>
+                    <label className="field-label" htmlFor="entidadeConta">Conta com dígito</label>
+                    <input
+                      id="entidadeConta"
+                      className="field-input"
+                      value={entidadeForm.conta || ''}
+                      onChange={e => setEntidadeForm(current => ({ ...current, conta: e.target.value }))}
+                      placeholder="Conta com dígito"
+                    />
+                  </div>
+                </>
+              )}
+
+              {entidadeForm.formaPagamento === 'Outro' && (
+                <div>
+                  <label className="field-label" htmlFor="entidadeOutroPagamento">Descrição do pagamento</label>
+                  <input
+                    id="entidadeOutroPagamento"
+                    className="field-input"
+                    value={entidadeForm.outroPagamento || ''}
+                    onChange={e => setEntidadeForm(current => ({ ...current, outroPagamento: e.target.value }))}
+                    placeholder="Descreva a forma de pagamento"
+                  />
+                </div>
+              )}
+
+              {/* Boleto: nenhum campo extra */}
 
               <p className="text-xs text-zinc-500">Obrigatório informar CNPJ e ao menos Pix ou dados bancários.</p>
 
@@ -329,13 +381,42 @@ export function CadastroMenuSection({
                         <dd>{entry.contato || '--'}</dd>
                       </div>
                       <div>
-                        <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Chave Pix</dt>
-                        <dd>{entry.chavePix || '--'}</dd>
+                        <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Forma de pagamento</dt>
+                        <dd>{
+                          entry.formaPagamento === 'PIX' ? 'Pix' :
+                          entry.formaPagamento === 'ContaBancaria' ? 'Conta Bancária' :
+                          entry.formaPagamento === 'Boleto' ? 'Boleto' :
+                          entry.formaPagamento === 'Outro' ? 'Outro' : '--'
+                        }</dd>
                       </div>
-                      <div className="sm:col-span-2">
-                        <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Dados bancários</dt>
-                        <dd className="whitespace-pre-wrap">{entry.dadosBancarios || '--'}</dd>
-                      </div>
+                      {entry.formaPagamento === 'PIX' && (
+                        <div className="sm:col-span-2">
+                          <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Chave Pix</dt>
+                          <dd>{entry.pix || '--'}</dd>
+                        </div>
+                      )}
+                      {entry.formaPagamento === 'ContaBancaria' && (
+                        <>
+                          <div>
+                            <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Banco</dt>
+                            <dd>{entry.banco || '--'}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Agência</dt>
+                            <dd>{entry.agencia || '--'}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Conta</dt>
+                            <dd>{entry.conta || '--'}{entry.contaDigito ? `-${entry.contaDigito}` : ''}</dd>
+                          </div>
+                        </>
+                      )}
+                      {entry.formaPagamento === 'Outro' && (
+                        <div className="sm:col-span-2">
+                          <dt className="text-xs uppercase tracking-[0.08em] text-zinc-500">Descrição</dt>
+                          <dd>{entry.outrosDados || '--'}</dd>
+                        </div>
+                      )}
                     </dl>
                   </li>
                 ))}

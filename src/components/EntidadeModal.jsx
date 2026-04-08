@@ -129,80 +129,86 @@ export function EntidadeModal({
             <select
               id="modalFormaPagamentoEntidade"
               className="field-input"
-              value={entidadeForm.formaPagamento || ''}
-              onChange={e => {
-                const value = e.target.value
-                setEntidadeForm(current => ({
-                  ...current,
-                  formaPagamento: value,
-                  // Clear fields when switching type
-                  chavePix: value === 'PIX' ? current.chavePix : '',
-                  agencia: value === 'ContaBancaria' ? current.agencia : '',
-                  conta: value === 'ContaBancaria' ? current.conta : '',
-                  outroPagamento: value === 'Outro' ? current.outroPagamento : '',
-                }))
-              }}
+              value={entidadeForm.formaPagamento}
+              onChange={e => setEntidadeForm(current => ({ ...current, formaPagamento: e.target.value }))}
             >
               <option value="">Selecione...</option>
-              <option value="PIX">Pix</option>
+              <option value="PIX">PIX</option>
               <option value="ContaBancaria">Conta Bancária</option>
               <option value="Boleto">Boleto</option>
               <option value="Outro">Outro</option>
             </select>
           </div>
 
+          {/* Campos dinâmicos conforme formaPagamento */}
           {entidadeForm.formaPagamento === 'PIX' && (
             <div className="sm:col-span-2">
-              <label className="field-label" htmlFor="modalEntidadePix">Chave Pix</label>
+              <label className="field-label" htmlFor="modalPixEntidade">Chave Pix</label>
               <input
-                id="modalEntidadePix"
+                id="modalPixEntidade"
                 className="field-input"
-                value={entidadeForm.chavePix || ''}
-                onChange={e => setEntidadeForm(current => ({ ...current, chavePix: e.target.value }))}
+                value={entidadeForm.pix}
+                onChange={e => setEntidadeForm(current => ({ ...current, pix: e.target.value }))}
                 placeholder="CPF, CNPJ, e-mail, celular ou chave aleatória"
               />
             </div>
           )}
-
           {entidadeForm.formaPagamento === 'ContaBancaria' && (
             <>
               <div>
-                <label className="field-label" htmlFor="modalEntidadeAgencia">Agência</label>
+                <label className="field-label" htmlFor="modalBancoEntidade">Banco</label>
                 <input
-                  id="modalEntidadeAgencia"
+                  id="modalBancoEntidade"
                   className="field-input"
-                  value={entidadeForm.agencia || ''}
+                  value={entidadeForm.banco}
+                  onChange={e => setEntidadeForm(current => ({ ...current, banco: e.target.value }))}
+                  placeholder="Nome do banco"
+                />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="modalAgenciaEntidade">Agência</label>
+                <input
+                  id="modalAgenciaEntidade"
+                  className="field-input"
+                  value={entidadeForm.agencia}
                   onChange={e => setEntidadeForm(current => ({ ...current, agencia: e.target.value }))}
                   placeholder="Agência"
                 />
               </div>
               <div>
-                <label className="field-label" htmlFor="modalEntidadeConta">Conta com dígito</label>
+                <label className="field-label" htmlFor="modalContaEntidade">Conta</label>
                 <input
-                  id="modalEntidadeConta"
+                  id="modalContaEntidade"
                   className="field-input"
-                  value={entidadeForm.conta || ''}
+                  value={entidadeForm.conta}
                   onChange={e => setEntidadeForm(current => ({ ...current, conta: e.target.value }))}
-                  placeholder="Conta com dígito"
+                  placeholder="Conta"
+                />
+              </div>
+              <div>
+                <label className="field-label" htmlFor="modalContaDigitoEntidade">Dígito</label>
+                <input
+                  id="modalContaDigitoEntidade"
+                  className="field-input"
+                  value={entidadeForm.contaDigito}
+                  onChange={e => setEntidadeForm(current => ({ ...current, contaDigito: e.target.value }))}
+                  placeholder="Dígito"
                 />
               </div>
             </>
           )}
-
           {entidadeForm.formaPagamento === 'Outro' && (
             <div className="sm:col-span-2">
-              <label className="field-label" htmlFor="modalOutroPagamentoEntidade">Descrição do pagamento</label>
+              <label className="field-label" htmlFor="modalOutrosDadosEntidade">Descrição</label>
               <input
-                id="modalOutroPagamentoEntidade"
+                id="modalOutrosDadosEntidade"
                 className="field-input"
-                value={entidadeForm.outroPagamento || ''}
-                onChange={e => setEntidadeForm(current => ({ ...current, outroPagamento: e.target.value }))}
-                placeholder="Descreva a forma de pagamento"
+                value={entidadeForm.outrosDados}
+                onChange={e => setEntidadeForm(current => ({ ...current, outrosDados: e.target.value }))}
+                placeholder="Descreva como a entidade recebe pagamentos"
               />
             </div>
           )}
-
-          {/* Boleto: no extra fields */}
 
           <p className="text-xs text-zinc-500 sm:col-span-2">
             Obrigatório informar CNPJ e ao menos Pix ou dados bancários.

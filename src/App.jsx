@@ -273,10 +273,12 @@ function createInitialEntidadeForm() {
     contato: '',
     responsavel: '',
     formaPagamento: '', // PIX, ContaBancaria, Boleto, Outro
-    chavePix: '',
+    pix: '',
+    banco: '',
     agencia: '',
     conta: '',
-    outroPagamento: '',
+    contaDigito: '',
+    outrosDados: '',
   }
 }
 
@@ -1797,20 +1799,39 @@ function App() {
         'Valor destinado',
       ]
 
-      const detailRows = linhasDetalhadasGerencial.map((item) => [
-        formatDateBR(item.solicitacaoData),
-        item.competencia,
-        item.ano,
-        item.processoId,
-        item.termo,
-        item.destino,
-        item.entidade,
-        item.categoria,
-        item.municipio,
-        item.estado,
-        getStatusPagamentoLabel(item.status),
-        formatCurrency(item.valor),
-      ])
+      const detailRows = linhasDetalhadasGerencial.map((item) => {
+        const entidade = entidadesById[item.entidadeId]
+        let dadosBancarios = '--'
+        if (entidade?.formaPagamento === 'PIX') {
+          dadosBancarios = `Pix: ${entidade?.pix || '--'}`
+        } else if (entidade?.formaPagamento === 'ContaBancaria') {
+          const banco = entidade?.banco || '--'
+          const agencia = entidade?.agencia || '--'
+          const conta = entidade?.conta || '--'
+          const contaDigito = entidade?.contaDigito ? `-${entidade.contaDigito}` : ''
+          dadosBancarios = `Banco: ${banco} | Agência: ${agencia} | Conta: ${conta}${contaDigito}`
+        } else if (entidade?.formaPagamento === 'Outro') {
+          dadosBancarios = `Outro: ${entidade?.outrosDados || '--'}`
+        } else if (entidade?.formaPagamento === 'Boleto') {
+          dadosBancarios = 'Boleto'
+        }
+        return [
+          formatDateBR(item.solicitacaoData),
+          item.competencia,
+          item.ano,
+          item.processoId,
+          item.termo,
+          item.destino,
+          item.entidade,
+          item.categoria,
+          item.municipio,
+          item.estado,
+          getStatusPagamentoLabel(item.status),
+          formatCurrency(item.valor),
+          entidade?.formaPagamento || '--',
+          dadosBancarios,
+        ]
+      })
 
       const lines = []
       lines.push('Relatório;Informações Gerenciais de Destinação de Fomento')
@@ -2196,8 +2217,21 @@ function App() {
         const nomeEntidade = String(entidade?.nome || '').trim() || 'Não informado'
         const cnpjEntidade = String(entidade?.cnpj || '').trim() || 'Não informado'
         const chavePixEntidade = String(entidade?.chavePix || '').trim() || 'Não informada'
-        const dadosBancariosEntidade =
-          String(entidade?.dadosBancarios || '').trim() || 'Não informados'
+        // Montar dados bancários conforme o novo modelo
+        let dadosBancariosEntidade = '--'
+        if (entidade?.formaPagamento === 'PIX') {
+          dadosBancariosEntidade = `Pix: ${entidade?.pix || '--'}`
+        } else if (entidade?.formaPagamento === 'ContaBancaria') {
+          const banco = entidade?.banco || '--'
+          const agencia = entidade?.agencia || '--'
+          const conta = entidade?.conta || '--'
+          const contaDigito = entidade?.contaDigito ? `-${entidade.contaDigito}` : ''
+          dadosBancariosEntidade = `Banco: ${banco} | Agência: ${agencia} | Conta: ${conta}${contaDigito}`
+        } else if (entidade?.formaPagamento === 'Outro') {
+          dadosBancariosEntidade = `Outro: ${entidade?.outrosDados || '--'}`
+        } else if (entidade?.formaPagamento === 'Boleto') {
+          dadosBancariosEntidade = 'Boleto'
+        }
         const contatoEntidade = String(entidade?.contato || '').trim() || 'Não informado'
         const responsavelEntidade = String(entidade?.responsavel || '').trim() || 'Não informado'
         const municipioEntidade = String(entidade?.municipio || '').trim() || 'Nao informado'
@@ -2229,8 +2263,8 @@ function App() {
             `Estado: ${estadoEntidade}`,
             `Responsável: ${responsavelEntidade}`,
             `Contato: ${contatoEntidade}`,
-            `Chave Pix: ${chavePixEntidade}`,
-            `Dados bancários: ${dadosBancariosEntidade}`,
+            `Forma de pagamento: ${entidade?.formaPagamento || '--'}`,
+            dadosBancariosEntidade,
           ],
           { gapAfter: sectionGap },
         )
@@ -2637,8 +2671,21 @@ function App() {
       const nomeEntidade = String(destinacaoItem.entidadeNome || '').trim() || 'Não informado'
       const cnpjEntidade = String(entidadeRelacionada?.cnpj || '').trim() || 'Não informado'
       const chavePixEntidade = String(entidadeRelacionada?.chavePix || '').trim() || 'Não informada'
-      const dadosBancariosEntidade =
-        String(entidadeRelacionada?.dadosBancarios || '').trim() || 'Não informados'
+      // Montar dados bancários conforme o novo modelo
+      let dadosBancariosEntidade = '--'
+      if (entidadeRelacionada?.formaPagamento === 'PIX') {
+        dadosBancariosEntidade = `Pix: ${entidadeRelacionada?.pix || '--'}`
+      } else if (entidadeRelacionada?.formaPagamento === 'ContaBancaria') {
+        const banco = entidadeRelacionada?.banco || '--'
+        const agencia = entidadeRelacionada?.agencia || '--'
+        const conta = entidadeRelacionada?.conta || '--'
+        const contaDigito = entidadeRelacionada?.contaDigito ? `-${entidadeRelacionada.contaDigito}` : ''
+        dadosBancariosEntidade = `Banco: ${banco} | Agência: ${agencia} | Conta: ${conta}${contaDigito}`
+      } else if (entidadeRelacionada?.formaPagamento === 'Outro') {
+        dadosBancariosEntidade = `Outro: ${entidadeRelacionada?.outrosDados || '--'}`
+      } else if (entidadeRelacionada?.formaPagamento === 'Boleto') {
+        dadosBancariosEntidade = 'Boleto'
+      }
       const contatoEntidade = String(entidadeRelacionada?.contato || '').trim() || 'Não informado'
       const responsavelEntidade =
         String(entidadeRelacionada?.responsavel || '').trim() || 'Não informado'
@@ -2671,8 +2718,8 @@ function App() {
           `Estado: ${estadoEntidade}`,
           `Responsável: ${responsavelEntidade}`,
           `Contato: ${contatoEntidade}`,
-          `Chave Pix: ${chavePixEntidade}`,
-          `Dados bancários: ${dadosBancariosEntidade}`,
+          `Forma de pagamento: ${entidadeRelacionada?.formaPagamento || '--'}`,
+          dadosBancariosEntidade,
         ],
         { gapAfter: sectionGap },
       )
@@ -2840,11 +2887,13 @@ function App() {
 
     const normalizedEntidadeNome = entidadeForm.nome.trim().toLowerCase()
     const cnpjLimpo = sanitizeCNPJ(entidadeForm.cnpj)
-    const chavePix = entidadeForm.chavePix?.trim() || ''
-    const agencia = entidadeForm.agencia?.trim() || ''
-    const conta = entidadeForm.conta?.trim() || ''
-    const outroPagamento = entidadeForm.outroPagamento?.trim() || ''
-    const formaPagamento = entidadeForm.formaPagamento || ''
+    const formaPagamento = entidadeForm.formaPagamento
+    const pix = entidadeForm.pix.trim()
+    const banco = entidadeForm.banco.trim()
+    const agencia = entidadeForm.agencia.trim()
+    const conta = entidadeForm.conta.trim()
+    const contaDigito = entidadeForm.contaDigito.trim()
+    const outrosDados = entidadeForm.outrosDados.trim()
     const estado = String(entidadeForm.estado || '').trim().toUpperCase()
     const municipio = String(entidadeForm.municipio || '').trim()
 
@@ -2863,21 +2912,22 @@ function App() {
       return
     }
 
-    // Payment validation
+
+    // Validação dos campos bancários
     if (!formaPagamento) {
-      toast.error('Selecione a forma de pagamento.')
+      toast.error('Selecione a forma de pagamento da entidade.')
       return
     }
-    if (formaPagamento === 'PIX' && !chavePix) {
-      toast.error('Informe a chave Pix.')
+    if (formaPagamento === 'PIX' && !pix) {
+      toast.error('Informe a chave Pix da entidade.')
       return
     }
-    if (formaPagamento === 'ContaBancaria' && (!agencia || !conta)) {
-      toast.error('Informe agência e conta.')
+    if (formaPagamento === 'ContaBancaria' && (!banco || !agencia || !conta || !contaDigito)) {
+      toast.error('Preencha todos os campos bancários: banco, agência, conta e dígito.')
       return
     }
-    if (formaPagamento === 'Outro' && !outroPagamento) {
-      toast.error('Descreva a forma de pagamento.')
+    if (formaPagamento === 'Outro' && !outrosDados) {
+      toast.error('Descreva como a entidade recebe pagamentos.')
       return
     }
 
@@ -2915,10 +2965,12 @@ function App() {
         contato: entidadeForm.contato.trim(),
         responsavel: entidadeForm.responsavel.trim(),
         formaPagamento,
-        chavePix: formaPagamento === 'PIX' ? chavePix : '',
+        pix: formaPagamento === 'PIX' ? pix : '',
+        banco: formaPagamento === 'ContaBancaria' ? banco : '',
         agencia: formaPagamento === 'ContaBancaria' ? agencia : '',
         conta: formaPagamento === 'ContaBancaria' ? conta : '',
-        outroPagamento: formaPagamento === 'Outro' ? outroPagamento : '',
+        contaDigito: formaPagamento === 'ContaBancaria' ? contaDigito : '',
+        outrosDados: formaPagamento === 'Outro' ? outrosDados : '',
         descricaoCategoria: categoriaDescriptions[entidadeForm.categoria] || '',
         updatedAt: timestamp,
         updatedBy: user.uid,
@@ -2974,34 +3026,16 @@ function App() {
     setActiveCadastroTab('entidades')
     setIsEntidadeFormVisible(true)
     setEditingEntidadeId(entry.id)
-    // Backward compatibility: migrate old entities
-    let formaPagamento = ''
-    if (entry?.formaPagamento) {
-      formaPagamento = entry.formaPagamento
-    } else if (entry?.chavePix) {
-      formaPagamento = 'PIX'
-    } else if (entry?.agencia || entry?.conta) {
-      formaPagamento = 'ContaBancaria'
-    } else if (entry?.dadosBancarios) {
-      formaPagamento = 'ContaBancaria'
-    } else if (entry?.outroPagamento) {
-      formaPagamento = 'Outro'
-    } else {
-      formaPagamento = ''
-    }
     setEntidadeForm({
       nome: String(entry?.nome || ''),
       categoria: String(entry?.categoria || 'Assistencia'),
       cnpj: maskCNPJ(entry?.cnpj || ''),
-      estado: String(entry?.estado || '').trim().toUpperCase(),
+      estado: String(entry?.estado || ''),
       municipio: String(entry?.municipio || ''),
       contato: String(entry?.contato || ''),
       responsavel: String(entry?.responsavel || ''),
-      formaPagamento,
       chavePix: String(entry?.chavePix || ''),
-      agencia: String(entry?.agencia || ''),
-      conta: String(entry?.conta || ''),
-      outroPagamento: String(entry?.outroPagamento || ''),
+      dadosBancarios: String(entry?.dadosBancarios || ''),
     })
     setIsEntidadeModalOpen(false)
   }
