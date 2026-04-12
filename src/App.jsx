@@ -1554,11 +1554,8 @@ function App() {
   )
 
   const totalDestinadoEmTransito = useMemo(
-    () =>
-      destinacoes
-        .filter((item) => item.statusPagamento !== 'pago')
-        .reduce((acc, item) => acc + Number(item.valorDestinado || 0), 0),
-    [destinacoes],
+    () => totalDestinado,
+    [totalDestinado],
   )
 
   const totalDestinadoPagos = useMemo(
@@ -1789,18 +1786,82 @@ function App() {
 
   const categoriaTexto = categoriaDescriptions[entidadeForm.categoria] || ''
 
-  const empresasCadastroOptions = useMemo(
-    () =>
-      empresas
-        .map((item) => ({
-          id: String(item.id || '').trim(),
-          razaoSocial: String(item.razaoSocial || '').trim(),
-          cnpj: String(item.cnpj || '').trim(),
-        }))
-        .filter((item) => item.id && item.razaoSocial)
-        .sort((a, b) => a.razaoSocial.localeCompare(b.razaoSocial)),
-    [empresas],
-  )
+  const empresasCadastroOptions = useMemo(() => {
+    // 1. Operadores cadastrados manualmente (coleção empresas)
+    const cadastradosManuais = empresas
+      .map((item) => ({
+        id: String(item.id || '').trim(),
+        razaoSocial: String(item.razaoSocial || '').trim(),
+        cnpj: String(item.cnpj || '').trim(),
+      }))
+      .filter((item) => item.id && item.razaoSocial)
+
+    // 2. Operadores extraídos do CSV (baseCsv)
+    const mapaCsv = new Map()
+
+    baseCsv.forEach((item) => {
+      const empresaNome = String(item.empresa || '').trim() || 'Operador lotérico não informado'
+      const empresaKey = getEmpresaGroupKey(item.cnpj, empresaNome)
+      const cnpjDigits = sanitizeCNPJ(item.cnpj)
+
+      if (!mapaCsv.has(empresaKey)) {
+        mapaCsv.set(empresaKey, {
+          empresaKey,
+          cnpjDigits,
+          nomes: new Map(),
+          fallbackNome: empresaNome,
+        })
+      }
+
+      const entry = mapaCsv.get(empresaKey)
+      entry.nomes.set(empresaNome, (entry.nomes.get(empresaNome) || 0) + 1)
+
+      if (!entry.cnpjDigits && cnpjDigits) {
+        entry.cnpjDigits = cnpjDigits
+      }
+    })
+
+    const operadoresCsv = Array.from(mapaCsv.values()).map((entry) => {
+      const razaoSocial =
+        Array.from(entry.nomes.entries())
+          .sort((a, b) => {
+            if (b[1] !== a[1]) {
+              return b[1] - a[1]
+            }
+            return a[0].localeCompare(b[0])
+          })
+          .at(0)?.[0] || entry.fallbackNome
+
+      const cnpj = entry.cnpjDigits ? maskCNPJ(entry.cnpjDigits) : ''
+      const id = `csv:${entry.empresaKey}` // ID fictício para operadores do CSV
+
+      return {
+        id,
+        razaoSocial,
+        cnpj,
+      }
+    })
+
+    // 3. Combinar, dando prioridade aos cadastrados manuais
+    const mapaCombinado = new Map()
+
+    // Primeiro adiciona os operadores do CSV
+    operadoresCsv.forEach((item) => {
+      const chave = item.cnpj || item.razaoSocial.toLowerCase()
+      mapaCombinado.set(chave, item)
+    })
+
+    // Sobrescreve com operadores cadastrados manualmente (prioridade)
+    cadastradosManuais.forEach((item) => {
+      const chave = item.cnpj || item.razaoSocial.toLowerCase()
+      mapaCombinado.set(chave, item)
+    })
+
+    // Converter para array e ordenar
+    return Array.from(mapaCombinado.values()).sort((a, b) =>
+      a.razaoSocial.localeCompare(b.razaoSocial),
+    )
+  }, [empresas, baseCsv])
 
   const empresasCadastroLista = useMemo(() => {
     return empresasCadastroOptions.map((item) => {
@@ -3778,12 +3839,12 @@ function App() {
                   {formatCurrencyCompact(totalEmFomentos)}
                 </strong>
               </article>
-              <article className="card-metric">
-                <p>Total destinado em trânsito</p>
-                <strong title={formatCurrency(totalDestinadoEmTransito)}>
-                  {formatCurrencyCompact(totalDestinadoEmTransito)}
-                </strong>
-              </article>
+                   <article className="card-metric">
+                     <p>Total destinado</p>
+                     <strong title={formatCurrency(totalDestinadoEmTransito)}>
+                       {formatCurrencyCompact(totalDestinadoEmTransito)}
+                     </strong>
+                   </article>
               <article className="card-metric">
                 <p>Total destinado pagos</p>
                 <strong title={formatCurrency(totalDestinadoPagos)}>

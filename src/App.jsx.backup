@@ -3779,7 +3779,7 @@ function App() {
                 </strong>
               </article>
               <article className="card-metric">
-                <p>Total destinado em trânsito</p>
+                <p>Total destinado</p>
                 <strong title={formatCurrency(totalDestinadoEmTransito)}>
                   {formatCurrencyCompact(totalDestinadoEmTransito)}
                 </strong>
