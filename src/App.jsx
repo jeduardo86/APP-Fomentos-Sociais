@@ -46,6 +46,14 @@ import {
   updateUserRole,
 } from './services/firestoreService'
 
+// Import the new UFR-PB Calculator component
+import UfrPbCalculator from './components/UfrPbCalculator'
+
+// Add a new menu item for the calculator
+const additionalMenuTabs = [
+  { id: 'calculadora', label: 'Calculadora UFR-PB' },
+]
+
 const destinationTabs = [
   { id: 'gerencial', label: 'Painel gerencial' },
   { id: 'destinacao', label: 'Destinações' },
@@ -3791,6 +3799,13 @@ function App() {
                 >
                   Configurações
                 </button>
+                <button
+                  type="button"
+                  className={activeMenu === 'calculadora' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
+                  onClick={() => setActiveMenu('calculadora')}
+                >
+                  Calculadora UFR-PB
+                </button>
               </nav>
             </div>
 
@@ -6296,6 +6311,10 @@ function App() {
             </section>
           )}
 
+          {activeMenu === 'calculadora' && (
+            <UfrPbCalculator />
+          )}
+
           {activeMenu === 'relatorios' && (
             <section className="panel panel-soft space-y-5 sm:p-6">
               <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-2">
@@ -7250,6 +7269,13 @@ function App() {
                   onClick={() => handleSelectMobileMenu('configuracoes')}
                 >
                   Configurações
+                </button>
+                <button
+                  type="button"
+                  className={activeMenu === 'calculadora' ? 'tab tab-active w-full text-left' : 'tab w-full text-left'}
+                  onClick={() => handleSelectMobileMenu('calculadora')}
+                >
+                  Calculadora UFR-PB
                 </button>
                 <button
                   type="button"
