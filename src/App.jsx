@@ -588,7 +588,6 @@ function App() {
   const reportContentRef = useRef(null)
   const isLoadingMunicipiosRef = useRef(false)
   const lastCnpjLookupRef = useRef('')
-  const autoSyncedCsvKeysRef = useRef(new Set())
   const canAccessCadastroBase = Boolean(user && userProfile && userProfile?.blocked !== true)
   const visibleCadastroTabs = isAdmin
     ? cadastroTabs
@@ -639,7 +638,6 @@ function App() {
       setEntidades([])
       setEmpresas([])
       setCsvUrl('')
-      autoSyncedCsvKeysRef.current.clear()
       return undefined
     }
 
@@ -732,55 +730,6 @@ function App() {
     return () => stopUsers()
   }, [user, isAdmin, userProfile])
 
-  useEffect(() => {
-    if (!user || !isAdmin || userProfile?.blocked === true) {
-      return
-    }
-
-    const validation = validateCsvSourceInput(csvUrl)
-
-    if (!validation.isValid || !validation.normalizedUrl) {
-      return
-    }
-
-    const syncKey = `${user.uid}|${validation.normalizedUrl}`
-
-    if (autoSyncedCsvKeysRef.current.has(syncKey)) {
-      return
-    }
-
-    autoSyncedCsvKeysRef.current.add(syncKey)
-
-    let cancelled = false
-
-    ;(async () => {
-      try {
-        const records = await fetchAndParseCsv(validation.normalizedUrl)
-
-        if (!records.length) {
-          throw new Error('CSV sem registros válidos.')
-        }
-
-        await syncBaseCsv(records, user.uid)
-
-        if (!cancelled) {
-          toast.success(`Sincronização automática concluída: ${records.length} processos.`, {
-            id: 'auto-csv-sync-success',
-          })
-        }
-      } catch (error) {
-        if (!cancelled) {
-          toast.error(error?.message || 'Não foi possível sincronizar automaticamente a base CSV.', {
-            id: 'auto-csv-sync-error',
-          })
-        }
-      }
-    })()
-
-    return () => {
-      cancelled = true
-    }
-  }, [user, userProfile, isAdmin, csvUrl])
 
   const totalDestinadoPorProcesso = useMemo(() => {
     return destinacoes.reduce((acc, item) => {
