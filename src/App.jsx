@@ -560,6 +560,7 @@ function App() {
   const [filtroDestinacaoPaga, setFiltroDestinacaoPaga] = useState('')
   const [editingDestinacaoId, setEditingDestinacaoId] = useState('')
   const [editDestinacaoForm, setEditDestinacaoForm] = useState(createInitialEditDestinacaoForm())
+  const [isSavingDestinacao, setIsSavingDestinacao] = useState(false)
 
   const [empresaForm, setEmpresaForm] = useState({ razaoSocial: '', cnpj: '' })
   const [isEmpresaFormVisible, setIsEmpresaFormVisible] = useState(false)
@@ -2557,70 +2558,77 @@ function App() {
   async function handleSalvarDestinacao(event) {
   event.preventDefault()
 
-  if (!user) {
-    toast.error('Autenticação obrigatória para registrar destinação.')
+  if (isSavingDestinacao) {
+    // Prevent duplicate submissions
     return
   }
 
-  if (!empresaSelecionada) {
-    toast.error('Selecione o operador lotérico para destinação.')
-    return
-  }
-
-  if (!selectedProcessIds.length) {
-    toast.error('Selecione ao menos um processo para destinação.')
-    return
-  }
-
-  if (!destForm.solicitacaoData || !destForm.competencia || !String(destForm.processoSolicitacaoEntidade || '').trim()) {
-    toast.error('Preencha os campos obrigatórios da destinação.')
-    return
-  }
-
-  if (destForm.tipoDestino === 'entidade' && !destForm.entidadeId) {
-    toast.error('Selecione uma entidade para a destinação.')
-    return
-  }
-
-  if (destForm.tipoDestino === 'empresa') {
-    const cnpjLimpo = sanitizeCNPJ(destForm.empresaCnpj)
-    if (cnpjLimpo.length !== 14) {
-      toast.error('Informe um CNPJ válido para a empresa.')
-      return
-    }
-    if (!destForm.empresaRazaoSocial.trim()) {
-      toast.error('Informe a razão social da empresa.')
-      return
-    }
-  }
-
-  const entidade = entidades.find((entry) => entry.id === destForm.entidadeId)
-  const processosSelecionados = processosEmpresa.filter((item) =>
-    selectedProcessIds.includes(item.processoId),
-  )
-
-  const processosSelecionadosComValor = processosSelecionados.map((processo) => ({
-    ...processo,
-    valorDestinadoSelecionado: getValorSelecionadoParaProcesso(processo),
-  }))
-
-  if (!processosSelecionadosComValor.length) {
-    toast.error('Nenhum processo válido selecionado para destinação.')
-    return
-  }
-
-  const processoComValorInvalido = processosSelecionadosComValor.find(
-    (processo) =>
-      Number(processo.valorDestinadoSelecionado || 0) <= 0 ||
-      Number(processo.valorDestinadoSelecionado || 0) > Number(processo.saldoDisponivel || 0),
-  )
-
-  if (processoComValorInvalido) {
-    toast.error('Revise os valores destinados. O valor deve ser maior que zero e respeitar o saldo.')
-    return
-  }
+  setIsSavingDestinacao(true)
 
   try {
+    if (!user) {
+      toast.error('Autenticação obrigatória para registrar destinação.')
+      return
+    }
+
+    if (!empresaSelecionada) {
+      toast.error('Selecione o operador lotérico para destinação.')
+      return
+    }
+
+    if (!selectedProcessIds.length) {
+      toast.error('Selecione ao menos um processo para destinação.')
+      return
+    }
+
+    if (!destForm.solicitacaoData || !destForm.competencia || !String(destForm.processoSolicitacaoEntidade || '').trim()) {
+      toast.error('Preencha os campos obrigatórios da destinação.')
+      return
+    }
+
+    if (destForm.tipoDestino === 'entidade' && !destForm.entidadeId) {
+      toast.error('Selecione uma entidade para a destinação.')
+      return
+    }
+
+    if (destForm.tipoDestino === 'empresa') {
+      const cnpjLimpo = sanitizeCNPJ(destForm.empresaCnpj)
+      if (cnpjLimpo.length !== 14) {
+        toast.error('Informe um CNPJ válido para a empresa.')
+        return
+      }
+      if (!destForm.empresaRazaoSocial.trim()) {
+        toast.error('Informe a razão social da empresa.')
+        return
+      }
+    }
+
+    const entidade = entidades.find((entry) => entry.id === destForm.entidadeId)
+    const processosSelecionados = processosEmpresa.filter((item) =>
+      selectedProcessIds.includes(item.processoId),
+    )
+
+    const processosSelecionadosComValor = processosSelecionados.map((processo) => ({
+      ...processo,
+      valorDestinadoSelecionado: getValorSelecionadoParaProcesso(processo),
+    }))
+
+    if (!processosSelecionadosComValor.length) {
+      toast.error('Nenhum processo válido selecionado para destinação.')
+      return
+    }
+
+    const processoComValorInvalido = processosSelecionadosComValor.find(
+      (processo) =>
+        Number(processo.valorDestinadoSelecionado || 0) <= 0 ||
+        Number(processo.valorDestinadoSelecionado || 0) > Number(processo.saldoDisponivel || 0),
+    )
+
+    if (processoComValorInvalido) {
+      toast.error('Revise os valores destinados. O valor deve ser maior que zero e respeitar o saldo.')
+      return
+    }
+
     for (const processo of processosSelecionadosComValor) {
       await createDestinacao({
         processoId: processo.processoId,
@@ -2802,6 +2810,8 @@ function App() {
     )
   } catch (error) {
     toast.error(error.message || 'Falha ao salvar a destinação.')
+  } finally {
+    setIsSavingDestinacao(false)
   }
 }
 
