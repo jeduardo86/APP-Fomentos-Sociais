@@ -33,7 +33,7 @@ export function EntidadeModal({
         </div>
 
         <form
-          className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+          className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3"
           onSubmit={(event) =>
             handleSalvarEntidade(event, {
               closeModalOnSuccess: true,
@@ -136,7 +136,7 @@ export function EntidadeModal({
             />
           </div>
 
-          <div className="sm:col-span-2">
+          <div className="sm:col-span-2 lg:col-span-3">
             <label className="field-label" htmlFor="modalDadosBancariosEntidade">
               Dados bancários para transferência
             </label>
@@ -151,15 +151,15 @@ export function EntidadeModal({
             />
           </div>
 
-          <p className="text-xs text-zinc-500 sm:col-span-2">
+          <p className="text-xs text-zinc-500 sm:col-span-2 lg:col-span-3">
             Obrigatório informar CNPJ e ao menos Pix ou dados bancários.
           </p>
 
-          <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 sm:col-span-2">
+          <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 sm:col-span-2 lg:col-span-3">
             {categoriaTexto}
           </div>
 
-          <div className="flex flex-wrap justify-end gap-2 sm:col-span-2">
+          <div className="flex flex-wrap justify-end gap-2 sm:col-span-2 lg:col-span-3">
             <button
               type="button"
               className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"

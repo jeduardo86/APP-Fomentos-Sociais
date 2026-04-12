@@ -149,10 +149,10 @@ export function CadastroMenuSection({
 
           {(isEntidadeFormVisible || editingEntidadeId) && (
             <form
-              className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
+              className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-4"
               onSubmit={handleSalvarEntidade}
             >
-              <h3 className="text-base font-semibold text-zinc-900">
+              <h3 className="text-base font-semibold text-zinc-900 lg:col-span-3">
                 {editingEntidadeId ? 'Editar entidade' : 'Nova entidade'}
               </h3>
               <div>
@@ -316,9 +316,9 @@ export function CadastroMenuSection({
 
               {/* Boleto: nenhum campo extra */}
 
-              <p className="text-xs text-zinc-500">Obrigatório informar CNPJ e ao menos Pix ou dados bancários.</p>
+              <p className="text-xs text-zinc-500 lg:col-span-3">Obrigatório informar CNPJ e ao menos Pix ou dados bancários.</p>
 
-              <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900">
+              <div className="rounded-xl border border-teal-200 bg-teal-50 p-3 text-sm text-teal-900 lg:col-span-3">
                 {categoriaTexto}
               </div>
 
