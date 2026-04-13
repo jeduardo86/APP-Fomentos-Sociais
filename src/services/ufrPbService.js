@@ -5,7 +5,16 @@ const UFR_PB_CSV_URL = `https://docs.google.com/spreadsheets/d/${UFR_PB_SHEET_ID
 
 export async function fetchCurrentUfrPbValue() {
   try {
-    const csvData = await fetchAndParseCsv(UFR_PB_CSV_URL)
+    console.log('🔍 Buscando valor UFR-PB da planilha...', UFR_PB_CSV_URL);
+    
+    // Tentar com proxy CORS se necessário
+    let csvData;
+    try {
+      csvData = await fetchAndParseCsv(UFR_PB_CSV_URL)
+    } catch (corsError) {
+      console.log('⚠️ Erro CORS detectado, tentando com proxy...');
+      csvData = await fetchAndParseCsv(`https://api.allorigins.win/raw?url=${encodeURIComponent(UFR_PB_CSV_URL)}`);
+    }
     
     if (!csvData || csvData.length < 2) {
       throw new Error('CSV vazio ou formato inválido')
@@ -14,22 +23,31 @@ export async function fetchCurrentUfrPbValue() {
     // Primeira linha: meses (janeiro a dezembro)
     const months = csvData[0].slice(1).map(month => month.toLowerCase().trim())
     
-    // Encontrar o mês atual
+    // Encontrar o mês atual (tentar nome longo e abreviado)
     const currentDate = new Date()
-    const currentMonth = currentDate.toLocaleDateString('pt-BR', { month: 'long' }).toLowerCase()
-    const currentMonthIndex = months.indexOf(currentMonth)
+    const currentMonthLong = currentDate.toLocaleDateString('pt-BR', { month: 'long' }).toLowerCase()
+    let currentMonthShort = currentDate.toLocaleDateString('pt-BR', { month: 'short' }).toLowerCase()
+    
+    // Normalizar: remover ponto final, espaços e caracteres especiais
+    currentMonthShort = currentMonthShort.replace(/[.\s]/g, '')
+    const normalizedMonths = months.map(m => m.replace(/[.\s]/g, ''))
+    
+    let currentMonthIndex = normalizedMonths.indexOf(currentMonthLong)
+    if (currentMonthIndex === -1) {
+      currentMonthIndex = normalizedMonths.indexOf(currentMonthShort)
+    }
     
     if (currentMonthIndex === -1) {
-      throw new Error(`Mês atual (${currentMonth}) não encontrado na planilha`)
+      throw new Error(`Mês atual (${currentMonthLong} / ${currentMonthShort}) não encontrado na planilha. Meses encontrados: ${months.join(', ')}`)
     }
 
-    // Encontrar o ano mais recente (primeira coluna com dados)
+    // Encontrar o ano mais recente (primeira linha válida, pois os anos estão ordenados de mais recente para mais antigo)
     let currentYearValue = null
     let currentYearIndex = -1
     
     for (let rowIndex = 1; rowIndex < csvData.length; rowIndex++) {
       const yearCell = csvData[rowIndex][0]
-      if (yearCell && yearCell.trim()) {
+      if (yearCell && yearCell.trim() && !isNaN(parseInt(yearCell.trim()))) {
         currentYearValue = yearCell.trim()
         currentYearIndex = rowIndex
         break
@@ -44,10 +62,10 @@ export async function fetchCurrentUfrPbValue() {
     const ufrPbValueCell = csvData[currentYearIndex][currentMonthIndex + 1]
     
     if (!ufrPbValueCell || !ufrPbValueCell.trim()) {
-      throw new Error(`Valor da UFR-PB para ${currentMonth}/${currentYearValue} não encontrado`)
+      throw new Error(`Valor da UFR-PB para ${currentMonthLong}/${currentYearValue} não encontrado`)
     }
 
-    const ufrPbValue = parseFloat(ufrPbValueCell.replace(/[^\\d.]/g, ''))
+    const ufrPbValue = parseFloat(ufrPbValueCell.replace(/[^0-9,.]/g, '').replace(',', '.'))
     
     if (isNaN(ufrPbValue) || ufrPbValue <= 0) {
       throw new Error(`Valor da UFR-PB inválido: ${ufrPbValue}`)
@@ -55,9 +73,9 @@ export async function fetchCurrentUfrPbValue() {
 
     return {
       value: ufrPbValue,
-      month: currentMonth,
+      month: currentMonthLong,
       year: currentYearValue,
-      date: `${currentMonth}/${currentYearValue}`,
+      date: `${currentMonthLong}/${currentYearValue}`,
       source: 'planilha-google'
     }
   } catch (error) {
@@ -65,7 +83,7 @@ export async function fetchCurrentUfrPbValue() {
     
     // Fallback para valor padrão
     return {
-      value: 60.0, // Valor padrão
+      value: 72.41, // Valor padrão atualizado Abril/2026
       month: new Date().toLocaleDateString('pt-BR', { month: 'long' }).toLowerCase(),
       year: new Date().getFullYear().toString(),
       date: 'não disponível',

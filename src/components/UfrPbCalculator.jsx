@@ -3,7 +3,7 @@ import { NumericFormat } from 'react-number-format';
 import { fetchCurrentUfrPbValue } from '../services/ufrPbService';
 
 const UfrPbCalculator = () => {
-  const [ufrPbValue, setUfrPbValue] = useState(60); // Default value for UFR-PB
+  const [ufrPbValue, setUfrPbValue] = useState(70); // Default value for UFR-PB
   const [premio, setPremio] = useState('');
   const [incentivo, setIncentivo] = useState('');
   const [percentual, setPercentual] = useState(7.5);
@@ -13,16 +13,28 @@ const UfrPbCalculator = () => {
   const [valorFinal, setValorFinal] = useState(0);
 
   useEffect(() => {
+    let isMounted = true;
+    const controller = new AbortController();
+
     const fetchUfrPb = async () => {
       try {
         const ufrPbData = await fetchCurrentUfrPbValue();
-        setUfrPbValue(ufrPbData.value);
+        if (isMounted) {
+          setUfrPbValue(ufrPbData.value);
+        }
       } catch (error) {
-        console.error('Erro ao buscar valor da UFR-PB:', error);
+        if (isMounted && error.name !== 'AbortError') {
+          console.error('Erro ao buscar valor da UFR-PB:', error);
+        }
       }
     };
 
     fetchUfrPb();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -140,7 +152,7 @@ const UfrPbCalculator = () => {
 
               <div className="pt-4 border-t border-slate-200">
                 <label className="block text-sm font-medium text-zinc-700 mb-2">
-                  Valor da UFR-PB
+                  Valor da unidade UFR-PB
                 </label>
                 <div className="relative">
                   <NumericFormat
