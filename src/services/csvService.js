@@ -141,16 +141,7 @@ function getAny(source, keys) {
   return ''
 }
 
-export async function fetchAndParseCsv(url) {
-  const downloadUrl = toCsvDownloadUrl(url)
-  const response = await fetch(downloadUrl)
-
-  if (!response.ok) {
-    throw new Error('Falha ao baixar o CSV informado.')
-  }
-
-  const csvText = await response.text()
-
+function parseCsvMatrix(csvText) {
   const parsed = Papa.parse(csvText, {
     header: false,
     skipEmptyLines: true,
@@ -161,4 +152,70 @@ export async function fetchAndParseCsv(url) {
   }
 
   return parsed.data
+}
+
+function parseCsvRecords(csvText) {
+  const parsed = Papa.parse(csvText, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: normalizeHeader,
+  })
+
+  if (parsed.errors.length) {
+    throw new Error('Não foi possível interpretar o CSV.')
+  }
+
+  const syncedAt = new Date().toISOString()
+
+  return parsed.data.map((row, index) => {
+    const processoId = String(getAny(row, ['PROCESSO', 'NPROCESSO', 'NUMEROPROCESSO'])).trim()
+    const valorPremio = parseCurrencyText(
+      getAny(row, ['VALORPREMIO', 'PREMIO', 'VALOR_DO_PREMIO']),
+    )
+    const incentivo = parseCurrencyText(
+      getAny(row, ['INCENTIVO', 'VALORINCENTIVO', 'VALOR_DO_INCENTIVO']),
+    )
+    const valorFomento =
+      valorPremio > 0 || incentivo > 0
+        ? (valorPremio + Math.max(0, incentivo - valorPremio * 0.15)) * 0.075
+        : parseCurrencyText(getAny(row, ['VALORFOMENTO', 'VALORFOMENTOLOTERICO', 'VALOR']))
+
+    return {
+      __csvDataRowNumber: index + 1,
+      processoId,
+      termo: String(
+        getAny(row, ['NTERMO', 'TERMOAUTORIZACAO', 'TERMO', 'TERMODEAUTORIZACAO']),
+      ).trim(),
+      cnpj: (() => {
+        const cnpjDigits = sanitizeCNPJ(
+          getAny(row, ['CNPJ', 'CNPJEMPRESA', 'CPF_CNPJ', 'CPFCNPJ', 'DOCUMENTO']),
+        )
+        return cnpjDigits ? maskCNPJ(cnpjDigits) : ''
+      })(),
+      empresa: String(getAny(row, ['EMPRESA', 'RAZAOSOCIAL', 'EMPRESA_RAZAOSOCIAL'])).trim(),
+      produto: String(getAny(row, ['PRODUTOLOTERICO', 'PRODUTO'])).trim(),
+      valorPremio,
+      incentivo,
+      valorFomento,
+      syncedAt,
+    }
+  })
+}
+
+export async function fetchAndParseCsv(url, options = {}) {
+  const downloadUrl = toCsvDownloadUrl(url)
+  const response = await fetch(downloadUrl)
+
+  if (!response.ok) {
+    throw new Error('Falha ao baixar o CSV informado.')
+  }
+
+  const csvText = await response.text()
+  const format = options?.format === 'raw' ? 'raw' : 'records'
+
+  if (format === 'raw') {
+    return parseCsvMatrix(csvText)
+  }
+
+  return parseCsvRecords(csvText)
 }

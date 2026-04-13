@@ -10,10 +10,10 @@ export async function fetchCurrentUfrPbValue() {
     // Tentar com proxy CORS se necessário
     let csvData;
     try {
-      csvData = await fetchAndParseCsv(UFR_PB_CSV_URL)
+      csvData = await fetchAndParseCsv(UFR_PB_CSV_URL, { format: 'raw' })
     } catch (corsError) {
       console.log('⚠️ Erro CORS detectado, tentando com proxy...');
-      csvData = await fetchAndParseCsv(`https://api.allorigins.win/raw?url=${encodeURIComponent(UFR_PB_CSV_URL)}`);
+      csvData = await fetchAndParseCsv(`https://api.allorigins.win/raw?url=${encodeURIComponent(UFR_PB_CSV_URL)}`, { format: 'raw' });
     }
     
     if (!csvData || csvData.length < 2) {
@@ -94,7 +94,7 @@ export async function fetchCurrentUfrPbValue() {
 
 export async function fetchUfrPbHistory() {
   try {
-    const csvData = await fetchAndParseCsv(UFR_PB_CSV_URL)
+    const csvData = await fetchAndParseCsv(UFR_PB_CSV_URL, { format: 'raw' })
     
     if (!csvData || csvData.length < 2) {
       throw new Error('CSV vazio ou formato inválido')
