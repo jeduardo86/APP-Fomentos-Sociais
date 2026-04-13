@@ -102,14 +102,15 @@ function fromMoneyCents(cents) {
 function getLimiteProcessoCents(source) {
   const premio = Number(source?.valorPremio || 0)
   const incentivo = Number(source?.incentivo || 0)
+  const valorMinimoCents = toMoneyCents(source?.valorFomentoMinimo)
 
   if (Number.isFinite(premio) && Number.isFinite(incentivo) && (premio > 0 || incentivo > 0)) {
     const incentivoBase = Math.max(0, incentivo - premio * 0.15)
     const baseCalculo = premio + incentivoBase
-    return toMoneyCents(baseCalculo * 0.075)
+    return Math.max(toMoneyCents(baseCalculo * 0.075), valorMinimoCents)
   }
 
-  return toMoneyCents(source?.valorFomento)
+  return Math.max(toMoneyCents(source?.valorFomento), valorMinimoCents)
 }
 
 function shouldRetryProfileLoad(error) {

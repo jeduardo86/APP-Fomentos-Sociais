@@ -1,5 +1,6 @@
 import Papa from 'papaparse'
 import { maskCNPJ, parseCurrencyText, sanitizeCNPJ } from '../lib/formatters'
+import { fetchUfrPbValueByDate } from './ufrPbService'
 
 const GOOGLE_SHEETS_ID_PATTERN = /^[a-zA-Z0-9-_]{20,}$/
 
@@ -141,6 +142,26 @@ function getAny(source, keys) {
   return ''
 }
 
+function normalizeExplorationStartDate(rawValue) {
+  const raw = String(rawValue || '').trim()
+
+  if (!raw) {
+    return ''
+  }
+
+  const brMatch = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (brMatch) {
+    return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`
+  }
+
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (isoMatch) {
+    return raw
+  }
+
+  return ''
+}
+
 function parseCsvMatrix(csvText) {
   const parsed = Papa.parse(csvText, {
     header: false,
@@ -154,7 +175,7 @@ function parseCsvMatrix(csvText) {
   return parsed.data
 }
 
-function parseCsvRecords(csvText) {
+async function parseCsvRecords(csvText) {
   const parsed = Papa.parse(csvText, {
     header: true,
     skipEmptyLines: true,
@@ -167,7 +188,7 @@ function parseCsvRecords(csvText) {
 
   const syncedAt = new Date().toISOString()
 
-  return parsed.data.map((row, index) => {
+  return Promise.all(parsed.data.map(async (row, index) => {
     const processoId = String(getAny(row, ['PROCESSO', 'NPROCESSO', 'NUMEROPROCESSO'])).trim()
     const valorPremio = parseCurrencyText(
       getAny(row, ['VALORPREMIO', 'PREMIO', 'VALOR_DO_PREMIO']),
@@ -175,10 +196,39 @@ function parseCsvRecords(csvText) {
     const incentivo = parseCurrencyText(
       getAny(row, ['INCENTIVO', 'VALORINCENTIVO', 'VALOR_DO_INCENTIVO']),
     )
-    const valorFomento =
+    const periodoExploracaoStart = normalizeExplorationStartDate(
+      getAny(row, [
+        'PERIODODEEXPLORACAOSTART',
+        'PERIODOEXPLORACAOSTART',
+        'DATADEEXPLORACAOSTART',
+        'DATAINICIOEXPLORACAO',
+      ]),
+    )
+
+    const valorFomentoCalculado =
       valorPremio > 0 || incentivo > 0
         ? (valorPremio + Math.max(0, incentivo - valorPremio * 0.15)) * 0.075
         : parseCurrencyText(getAny(row, ['VALORFOMENTO', 'VALORFOMENTOLOTERICO', 'VALOR']))
+
+    let ufrPbCompetencia = ''
+    let ufrPbUnitValue = 0
+    let valorFomentoMinimo = 0
+
+    if (periodoExploracaoStart) {
+      try {
+        const ufrPbInfo = await fetchUfrPbValueByDate(periodoExploracaoStart)
+        ufrPbCompetencia = ufrPbInfo.competencia
+        ufrPbUnitValue = Number(ufrPbInfo.value || 0)
+        valorFomentoMinimo = ufrPbUnitValue > 0 ? ufrPbUnitValue * 60 : 0
+      } catch (error) {
+        console.warn(
+          `Não foi possível obter a UFR-PB para o processo ${processoId || index + 1}:`,
+          error,
+        )
+      }
+    }
+
+    const valorFomento = Math.max(valorFomentoCalculado, valorFomentoMinimo)
 
     return {
       __csvDataRowNumber: index + 1,
@@ -194,12 +244,16 @@ function parseCsvRecords(csvText) {
       })(),
       empresa: String(getAny(row, ['EMPRESA', 'RAZAOSOCIAL', 'EMPRESA_RAZAOSOCIAL'])).trim(),
       produto: String(getAny(row, ['PRODUTOLOTERICO', 'PRODUTO'])).trim(),
+      periodoExploracaoStart,
+      ufrPbCompetencia,
+      ufrPbUnitValue,
+      valorFomentoMinimo,
       valorPremio,
       incentivo,
       valorFomento,
       syncedAt,
     }
-  })
+  }))
 }
 
 export async function fetchAndParseCsv(url, options = {}) {

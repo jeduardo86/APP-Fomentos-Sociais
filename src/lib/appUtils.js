@@ -16,12 +16,13 @@ export const FONT_SIZE_STORAGE_KEY = 'app-fomentos-font-size'
 
 export function getValorFomentoFromProcess(item) {
   const baseCalculo = getBaseCalculoFomentoFromProcess(item)
+  const valorMinimo = Number(item?.valorFomentoMinimo || 0)
 
   if (baseCalculo > 0) {
-    return baseCalculo * 0.075
+    return Math.max(baseCalculo * 0.075, valorMinimo)
   }
 
-  return Number(item?.valorFomento || 0)
+  return Math.max(Number(item?.valorFomento || 0), valorMinimo)
 }
 
 export function getBaseCalculoFomentoFromProcess(item) {
