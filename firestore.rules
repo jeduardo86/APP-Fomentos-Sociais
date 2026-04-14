@@ -112,11 +112,20 @@ service cloud.firestore {
           || request.resource.data.valorPagoAcumulado == request.resource.data.valorDestinado);
     }
 
+    function validDestinacaoDelete() {
+      return resource.data.valorPagoAcumulado is number
+        && resource.data.valorPagoAcumulado == 0
+        && resource.data.qtdPagamentos is number
+        && resource.data.qtdPagamentos == 0;
+    }
+
     match /destinacoes/{document=**} {
       allow read: if isAccessEnabled();
       allow create: if isAccessEnabled() && validCreateOwnership() && validDestinacaoCreate();
       allow update: if isAccessEnabled() && (validUpdateOwnership() || isAdmin()) && validDestinacaoUpdate();
-      allow delete: if false;
+      allow delete: if isAccessEnabled()
+        && (resource.data.createdBy == request.auth.uid || isAdmin())
+        && validDestinacaoDelete();
     }
 
     match /entidades/{document=**} {
