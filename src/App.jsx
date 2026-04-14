@@ -835,7 +835,7 @@ function App() {
     () =>
       Array.from(
         new Set(baseCsv.map((item) => String(item.processoId || '').trim()).filter(Boolean)),
-      ).sort((a, b) => a.localeCompare(b)),
+        ).sort((a, b) => a.localeCompare(b, 'pt-BR', { numeric: true, sensitivity: 'base' })),
     [baseCsv],
   )
 
@@ -1217,7 +1217,9 @@ function App() {
             return dataB.localeCompare(dataA)
           }
 
-          return a.processoId.localeCompare(b.processoId)
+          const processoA = String(a.processoId || '').trim()
+          const processoB = String(b.processoId || '').trim()
+          return processoA.localeCompare(processoB, 'pt-BR', { numeric: true, sensitivity: 'base' })
         })
     },
     [destinacoesGerencialFiltradas, entidadesById, gerencialCategoriaLabelByValue, baseCsv],
@@ -1245,7 +1247,11 @@ function App() {
         }
       })
       .filter((item) => item.saldoDisponivel > 0)
-      .sort((a, b) => String(a.processoId || '').localeCompare(String(b.processoId || '')))
+      .sort((a, b) => {
+        const processoA = String(a.processoId || '').trim()
+        const processoB = String(b.processoId || '').trim()
+        return processoA.localeCompare(processoB, 'pt-BR', { numeric: true, sensitivity: 'base' })
+      })
   }, [empresaSelecionada, baseCsv, totalDestinadoPorProcesso])
 
   const processosEmpresaById = useMemo(
@@ -1593,10 +1599,23 @@ function App() {
     [totalEmFomentos, totalDestinado],
   )
 
-  const pendentes = useMemo(
-    () => destinacoes.filter((item) => item.statusPagamento !== 'pago'),
-    [destinacoes],
-  )
+  const pendentes = useMemo(() => {
+    return destinacoes
+      .filter((item) => item.statusPagamento !== 'pago')
+      .sort((a, b) => {
+        const processoA = String(a.processoId || '').trim()
+        const processoB = String(b.processoId || '').trim()
+        const processoCompare = processoA.localeCompare(processoB, 'pt-BR', { numeric: true, sensitivity: 'base' })
+
+        if (processoCompare !== 0) {
+          return processoCompare
+        }
+
+        const empresaA = String(a.empresa || '').trim()
+        const empresaB = String(b.empresa || '').trim()
+        return empresaA.localeCompare(empresaB, 'pt-BR', { sensitivity: 'base' })
+      })
+  }, [destinacoes])
 
   const pagas = useMemo(
     () => destinacoes.filter((item) => item.statusPagamento === 'pago'),
@@ -1623,9 +1642,17 @@ function App() {
     const termo = String(filtroDestinacaoPaga || '').toLowerCase().trim()
 
     const base = [...pagas].sort((a, b) => {
-      const dataA = String(a.pgtoData || a.updatedAt || '')
-      const dataB = String(b.pgtoData || b.updatedAt || '')
-      return dataB.localeCompare(dataA)
+      const processoA = String(a.processoId || '').trim()
+      const processoB = String(b.processoId || '').trim()
+      const processoCompare = processoA.localeCompare(processoB, 'pt-BR', { numeric: true, sensitivity: 'base' })
+
+      if (processoCompare !== 0) {
+        return processoCompare
+      }
+
+      const empresaA = String(a.empresa || '').trim()
+      const empresaB = String(b.empresa || '').trim()
+      return empresaA.localeCompare(empresaB, 'pt-BR', { sensitivity: 'base' })
     })
 
     if (!termo) {
@@ -7327,6 +7354,7 @@ function App() {
 }
 
 export default App
+
 
 
 
