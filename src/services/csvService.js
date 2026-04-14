@@ -1,5 +1,6 @@
 import Papa from 'papaparse'
 import { maskCNPJ, parseCurrencyText, sanitizeCNPJ } from '../lib/formatters'
+import { fetchUfrPbValueByDate } from './ufrPbService'
 
 const GOOGLE_SHEETS_ID_PATTERN = /^[a-zA-Z0-9-_]{20,}$/
 
@@ -141,16 +142,27 @@ function getAny(source, keys) {
   return ''
 }
 
-export async function fetchAndParseCsv(url) {
-  const downloadUrl = toCsvDownloadUrl(url)
-  const response = await fetch(downloadUrl)
+function normalizeExplorationStartDate(rawValue) {
+  const raw = String(rawValue || '').trim()
 
-  if (!response.ok) {
-    throw new Error('Falha ao baixar o CSV informado.')
+  if (!raw) {
+    return ''
   }
 
-  const csvText = await response.text()
+  const brMatch = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (brMatch) {
+    return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`
+  }
 
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (isoMatch) {
+    return raw
+  }
+
+  return ''
+}
+
+function parseCsvMatrix(csvText) {
   const parsed = Papa.parse(csvText, {
     header: false,
     skipEmptyLines: true,
@@ -161,4 +173,103 @@ export async function fetchAndParseCsv(url) {
   }
 
   return parsed.data
+}
+
+async function parseCsvRecords(csvText) {
+  const parsed = Papa.parse(csvText, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: normalizeHeader,
+  })
+
+  if (parsed.errors.length) {
+    throw new Error('Não foi possível interpretar o CSV.')
+  }
+
+  const syncedAt = new Date().toISOString()
+
+  return Promise.all(parsed.data.map(async (row, index) => {
+    const processoId = String(getAny(row, ['PROCESSO', 'NPROCESSO', 'NUMEROPROCESSO'])).trim()
+    const valorPremio = parseCurrencyText(
+      getAny(row, ['VALORPREMIO', 'PREMIO', 'VALOR_DO_PREMIO']),
+    )
+    const incentivo = parseCurrencyText(
+      getAny(row, ['INCENTIVO', 'VALORINCENTIVO', 'VALOR_DO_INCENTIVO']),
+    )
+    const periodoExploracaoStart = normalizeExplorationStartDate(
+      getAny(row, [
+        'PERIODODEEXPLORACAOSTART',
+        'PERIODOEXPLORACAOSTART',
+        'DATADEEXPLORACAOSTART',
+        'DATAINICIOEXPLORACAO',
+      ]),
+    )
+
+    const valorFomentoCalculado =
+      valorPremio > 0 || incentivo > 0
+        ? (valorPremio + Math.max(0, incentivo - valorPremio * 0.15)) * 0.075
+        : parseCurrencyText(getAny(row, ['VALORFOMENTO', 'VALORFOMENTOLOTERICO', 'VALOR']))
+
+    let ufrPbCompetencia = ''
+    let ufrPbUnitValue = 0
+    let valorFomentoMinimo = 0
+
+    if (periodoExploracaoStart) {
+      try {
+        const ufrPbInfo = await fetchUfrPbValueByDate(periodoExploracaoStart)
+        ufrPbCompetencia = ufrPbInfo.competencia
+        ufrPbUnitValue = Number(ufrPbInfo.value || 0)
+        valorFomentoMinimo = ufrPbUnitValue > 0 ? ufrPbUnitValue * 60 : 0
+      } catch (error) {
+        console.warn(
+          `Não foi possível obter a UFR-PB para o processo ${processoId || index + 1}:`,
+          error,
+        )
+      }
+    }
+
+    const valorFomento = Math.max(valorFomentoCalculado, valorFomentoMinimo)
+
+    return {
+      __csvDataRowNumber: index + 1,
+      processoId,
+      termo: String(
+        getAny(row, ['NTERMO', 'TERMOAUTORIZACAO', 'TERMO', 'TERMODEAUTORIZACAO']),
+      ).trim(),
+      cnpj: (() => {
+        const cnpjDigits = sanitizeCNPJ(
+          getAny(row, ['CNPJ', 'CNPJEMPRESA', 'CPF_CNPJ', 'CPFCNPJ', 'DOCUMENTO']),
+        )
+        return cnpjDigits ? maskCNPJ(cnpjDigits) : ''
+      })(),
+      empresa: String(getAny(row, ['EMPRESA', 'RAZAOSOCIAL', 'EMPRESA_RAZAOSOCIAL'])).trim(),
+      produto: String(getAny(row, ['PRODUTOLOTERICO', 'PRODUTO'])).trim(),
+      periodoExploracaoStart,
+      ufrPbCompetencia,
+      ufrPbUnitValue,
+      valorFomentoMinimo,
+      valorPremio,
+      incentivo,
+      valorFomento,
+      syncedAt,
+    }
+  }))
+}
+
+export async function fetchAndParseCsv(url, options = {}) {
+  const downloadUrl = toCsvDownloadUrl(url)
+  const response = await fetch(downloadUrl)
+
+  if (!response.ok) {
+    throw new Error('Falha ao baixar o CSV informado.')
+  }
+
+  const csvText = await response.text()
+  const format = options?.format === 'raw' ? 'raw' : 'records'
+
+  if (format === 'raw') {
+    return parseCsvMatrix(csvText)
+  }
+
+  return parseCsvRecords(csvText)
 }

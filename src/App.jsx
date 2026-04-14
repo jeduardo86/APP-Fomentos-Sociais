@@ -73,12 +73,13 @@ const FONT_SIZE_STORAGE_KEY = 'app-fomentos-font-size'
 
 function getValorFomentoFromProcess(item) {
   const baseCalculo = getBaseCalculoFomentoFromProcess(item)
+  const valorMinimo = Number(item?.valorFomentoMinimo || 0)
 
   if (baseCalculo > 0) {
-    return baseCalculo * 0.075
+    return Math.max(baseCalculo * 0.075, valorMinimo)
   }
 
-  return Number(item?.valorFomento || 0)
+  return Math.max(Number(item?.valorFomento || 0), valorMinimo)
 }
 
 function getBaseCalculoFomentoFromProcess(item) {
@@ -1747,13 +1748,17 @@ function App() {
         }
       })
       .sort((a, b) => {
-        const cnpjCompare = String(a.cnpj || '').localeCompare(String(b.cnpj || ''))
+        const empresaCompare = String(a.empresa || '').localeCompare(String(b.empresa || ''), 'pt-BR', {
+          sensitivity: 'base',
+        })
 
-        if (cnpjCompare !== 0) {
-          return cnpjCompare
+        if (empresaCompare !== 0) {
+          return empresaCompare
         }
 
-        return a.empresa.localeCompare(b.empresa)
+        return String(a.cnpj || '').localeCompare(String(b.cnpj || ''), 'pt-BR', {
+          sensitivity: 'base',
+        })
       })
   }, [baseCsv, destinacoes])
 
@@ -7322,4 +7327,6 @@ function App() {
 }
 
 export default App
+
+
 

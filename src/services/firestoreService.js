@@ -102,14 +102,15 @@ function fromMoneyCents(cents) {
 function getLimiteProcessoCents(source) {
   const premio = Number(source?.valorPremio || 0)
   const incentivo = Number(source?.incentivo || 0)
+  const valorMinimoCents = toMoneyCents(source?.valorFomentoMinimo)
 
   if (Number.isFinite(premio) && Number.isFinite(incentivo) && (premio > 0 || incentivo > 0)) {
     const incentivoBase = Math.max(0, incentivo - premio * 0.15)
     const baseCalculo = premio + incentivoBase
-    return toMoneyCents(baseCalculo * 0.075)
+    return Math.max(toMoneyCents(baseCalculo * 0.075), valorMinimoCents)
   }
 
-  return toMoneyCents(source?.valorFomento)
+  return Math.max(toMoneyCents(source?.valorFomento), valorMinimoCents)
 }
 
 function shouldRetryProfileLoad(error) {
@@ -124,16 +125,39 @@ function wait(ms) {
 }
 
 export async function syncBaseCsv(records, userId) {
-  const batch = writeBatch(db)
+  const invalidRows = []
+  const normalizedRecords = records.map((record, index) => {
+    const processoId = String(record?.processoId || '').trim()
 
-  records.forEach((record) => {
+    if (!processoId) {
+      invalidRows.push(Number(record?.__csvDataRowNumber) || index + 1)
+    }
+
+    return {
+      ...record,
+      processoId,
+    }
+  })
+
+  if (invalidRows.length) {
+    const preview = invalidRows.slice(0, 10).join(', ')
+    const suffix = invalidRows.length > 10 ? ', ...' : ''
+    throw new Error(
+      `CSV contém registro(s) sem processoId nas linhas ${preview}${suffix}. Verifique a coluna PROCESSO do arquivo.`,
+    )
+  }
+
+  const batch = writeBatch(db)
+  const updatedAt = new Date().toISOString()
+
+  normalizedRecords.forEach(({ __csvDataRowNumber, ...record }) => {
     const safeId = toSafeDocId(record.processoId)
     const ref = doc(db, 'base_csv', safeId)
     batch.set(
       ref,
       {
         ...record,
-        updatedAt: new Date().toISOString(),
+        updatedAt,
         updatedBy: userId || '',
       },
       { merge: true },

@@ -341,13 +341,17 @@ export function useDestinationData({
         }
       })
       .sort((a, b) => {
-        const cnpjCompare = String(a.cnpj || '').localeCompare(String(b.cnpj || ''))
+        const empresaCompare = String(a.empresa || '').localeCompare(String(b.empresa || ''), 'pt-BR', {
+          sensitivity: 'base',
+        })
 
-        if (cnpjCompare !== 0) {
-          return cnpjCompare
+        if (empresaCompare !== 0) {
+          return empresaCompare
         }
 
-        return a.empresa.localeCompare(b.empresa)
+        return String(a.cnpj || '').localeCompare(String(b.cnpj || ''), 'pt-BR', {
+          sensitivity: 'base',
+        })
       })
   }, [baseCsv, destinacoes, getEmpresaGroupKey, getValorFomentoFromProcess, maskCNPJ, sanitizeCNPJ])
 
