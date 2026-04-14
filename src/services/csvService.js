@@ -1,5 +1,6 @@
 import Papa from 'papaparse'
 import { maskCNPJ, parseCurrencyText, sanitizeCNPJ } from '../lib/formatters'
+import { competenciaFromDate as competenciaFromIsoDate } from '../lib/appUtils'
 import { fetchUfrPbValueByDate } from './ufrPbService'
 
 const GOOGLE_SHEETS_ID_PATTERN = /^[a-zA-Z0-9-_]{20,}$/
@@ -149,17 +150,42 @@ function normalizeExplorationStartDate(rawValue) {
     return ''
   }
 
-  const brMatch = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
-  if (brMatch) {
-    return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`
-  }
-
+  // ISO (YYYY-MM-DD)
   const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
   if (isoMatch) {
     return raw
   }
 
+  // Slash date: could be BR (DD/MM/YYYY) or US (MM/DD/YYYY)
+  const slashMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (slashMatch) {
+    const a = Number(slashMatch[1])
+    const b = Number(slashMatch[2])
+    const y = slashMatch[3]
+
+    // Disambig rules:
+    // - If first > 12 => clearly DD/MM (BR)
+    // - Else if second > 12 => clearly MM/DD (US)
+    // - Else ambiguous (both <= 12): prefer US (MM/DD) per fonte atual do CSV
+    if (a > 12 && b >= 1 && b <= 12) {
+      // BR: DD/MM/YYYY -> YYYY-MM-DD
+      const dd = String(a).padStart(2, '0')
+      const mm = String(b).padStart(2, '0')
+      return `${y}-${mm}-${dd}`
+    }
+
+    // Default and when b > 12: US: MM/DD/YYYY -> YYYY-MM-DD
+    const mm = String(a).padStart(2, '0')
+    const dd = String(b).padStart(2, '0')
+    return `${y}-${mm}-${dd}`
+  }
+
   return ''
+}
+
+// Normaliza datas em formatos comuns (DD/MM/AAAA ou AAAA-MM-DD)
+function normalizeGenericDate(rawValue) {
+  return normalizeExplorationStartDate(rawValue)
 }
 
 function parseCsvMatrix(csvText) {
@@ -205,6 +231,21 @@ async function parseCsvRecords(csvText) {
       ]),
     )
 
+    // Preferir a data de autorização (termo) como referência da UFR
+    const dataAutorizacao = normalizeGenericDate(
+      getAny(row, [
+        'DATADEAUTORIZACAO',
+        'DATAAUTORIZACAO',
+        'DATADOTERMODEAUTORIZACAO',
+        'DATATERMODEAUTORIZACAO',
+        'DATADOTERMO',
+        'DATATERMO',
+        'DATA_TERMO',
+        'DATA_DO_TERMO',
+        'DATA_DO_TERMO_DE_AUTORIZACAO',
+      ]),
+    )
+
     const valorFomentoCalculado =
       valorPremio > 0 || incentivo > 0
         ? (valorPremio + Math.max(0, incentivo - valorPremio * 0.15)) * 0.075
@@ -214,10 +255,14 @@ async function parseCsvRecords(csvText) {
     let ufrPbUnitValue = 0
     let valorFomentoMinimo = 0
 
-    if (periodoExploracaoStart) {
+    // Data usada para buscar a UFR: autorização > início da exploração
+    const ufrBaseDate = dataAutorizacao || periodoExploracaoStart
+
+    if (ufrBaseDate) {
       try {
-        const ufrPbInfo = await fetchUfrPbValueByDate(periodoExploracaoStart)
-        ufrPbCompetencia = ufrPbInfo.competencia
+        const ufrPbInfo = await fetchUfrPbValueByDate(ufrBaseDate)
+        // Força competência no padrão MM/AAAA a partir da data base ISO; fallback para a vinda do serviço
+        ufrPbCompetencia = competenciaFromIsoDate(ufrBaseDate) || ufrPbInfo.competencia
         ufrPbUnitValue = Number(ufrPbInfo.value || 0)
         valorFomentoMinimo = ufrPbUnitValue > 0 ? ufrPbUnitValue * 60 : 0
       } catch (error) {
@@ -236,6 +281,8 @@ async function parseCsvRecords(csvText) {
       termo: String(
         getAny(row, ['NTERMO', 'TERMOAUTORIZACAO', 'TERMO', 'TERMODEAUTORIZACAO']),
       ).trim(),
+      // Data de autorização exibida/registrada passa a ser a mesma base usada para UFR
+      dataAutorizacao: ufrBaseDate || dataAutorizacao || periodoExploracaoStart || '',
       cnpj: (() => {
         const cnpjDigits = sanitizeCNPJ(
           getAny(row, ['CNPJ', 'CNPJEMPRESA', 'CPF_CNPJ', 'CPFCNPJ', 'DOCUMENTO']),
@@ -245,6 +292,7 @@ async function parseCsvRecords(csvText) {
       empresa: String(getAny(row, ['EMPRESA', 'RAZAOSOCIAL', 'EMPRESA_RAZAOSOCIAL'])).trim(),
       produto: String(getAny(row, ['PRODUTOLOTERICO', 'PRODUTO'])).trim(),
       periodoExploracaoStart,
+      ufrBaseDate,
       ufrPbCompetencia,
       ufrPbUnitValue,
       valorFomentoMinimo,

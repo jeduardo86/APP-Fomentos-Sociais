@@ -4148,6 +4148,33 @@ function App() {
                 <p className="mt-1 text-sm text-emerald-700">
                   Saldo disponível: {formatCurrency(item.saldoDisponivel)}
                 </p>
+                {(() => {
+                  const valorMin = Number(item?.valorFomentoMinimo || 0)
+                  const valorUsado = Number(item?.valorFomento || 0)
+                  const isUfrProcess = valorMin > 0 && Math.abs(valorUsado - valorMin) < 0.01
+
+                  if (!isUfrProcess) return null
+
+                  const baseDate = item.ufrBaseDate || item.dataAutorizacao || item.periodoExploracaoStart || ''
+                  const competenciaValida = (value) => /^(0[1-9]|1[0-2])\/\d{4}$/.test(String(value || ''))
+                  const competencia = competenciaValida(item.ufrPbCompetencia)
+                    ? item.ufrPbCompetencia
+                    : (competenciaFromDate(baseDate) || '--')
+
+                  return (
+                    <div className="mt-2 text-xs text-zinc-600">
+                      <p>
+                        Data da autorização: <span className="font-medium">{formatDateBR(baseDate)}</span>
+                      </p>
+                      <p>
+                        Competência da UFR: <span className="font-medium">{competencia}</span>
+                      </p>
+                      <p>
+                        Valor da UFR: <span className="font-medium">{formatCurrency(item.ufrPbUnitValue || 0)}</span>
+                      </p>
+                    </div>
+                  )
+                })()}
                 {checked && (
                   <div className="mt-3" onClick={(event) => event.stopPropagation()}>
                     <label className="mb-1 block text-sm font-medium text-zinc-600">
