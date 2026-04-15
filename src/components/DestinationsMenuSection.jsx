@@ -1,5 +1,8 @@
 import { NumericFormat } from 'react-number-format'
+
 import { pagamentoOptions } from '../lib/constants'
+import React, { useState } from 'react'
+import { ConfirmacaoAcaoModal } from './ConfirmacaoAcaoModal'
 
 export function DestinationsMenuSection({
   activeTab,
@@ -45,6 +48,34 @@ export function DestinationsMenuSection({
   toCompetenciaMask,
   totalSelecionadoParaDestinar,
 }) {
+  // Estado para modal de confirmação
+  const [showConfirmacaoModal, setShowConfirmacaoModal] = useState(false)
+  const [acaoEscolhida, setAcaoEscolhida] = useState(null)
+  const [salvando, setSalvando] = useState(false)
+
+  // Handler intermediário para submit do form
+  function handleSubmitDestinacao(e) {
+    e.preventDefault()
+    setShowConfirmacaoModal(true)
+  }
+
+  // Handler para escolha do usuário
+  async function handleEscolhaAcao(tipo) {
+    setAcaoEscolhida(tipo)
+    setShowConfirmacaoModal(false)
+    setSalvando(true)
+    // Chama o handler original passando a escolha
+    if (handleSalvarDestinacao) {
+      await handleSalvarDestinacao(tipo)
+    }
+    setSalvando(false)
+    setAcaoEscolhida(null)
+  }
+
+  function handleFecharModal() {
+    setShowConfirmacaoModal(false)
+  }
+
   return (
     <article className="panel panel-soft sm:p-6">
       <nav className="rounded-2xl border border-slate-200/70 bg-white/70 p-2" aria-label="Navegação de destinações">
@@ -250,7 +281,7 @@ export function DestinationsMenuSection({
             )}
           </div>
 
-          <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSalvarDestinacao}>
+          <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSubmitDestinacao}>
             <div>
               <label className="field-label" htmlFor="solicitacaoData">
                 Data de solicitação
@@ -326,11 +357,17 @@ export function DestinationsMenuSection({
             </div>
 
             <div className="sm:col-span-2">
-              <button className="btn-primary w-full" type="submit">
-                Salvar destinação
+              <button className="btn-primary w-full" type="submit" disabled={salvando}>
+                {salvando ? 'Salvando...' : 'Salvar destinação'}
               </button>
             </div>
           </form>
+        <ConfirmacaoAcaoModal
+          isOpen={showConfirmacaoModal}
+          onClose={handleFecharModal}
+          onEscolha={handleEscolhaAcao}
+          loading={salvando}
+        />
         </section>
       )}
 

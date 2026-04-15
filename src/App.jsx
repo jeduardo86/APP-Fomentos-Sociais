@@ -4,6 +4,7 @@ import toast, { Toaster } from 'react-hot-toast'
 import html2canvas from 'html2canvas'
 import { jsPDF } from 'jspdf'
 import { categoriaDescriptions, categoriaOptions, pagamentoOptions } from './lib/constants'
+import { ConfirmacaoAcaoModal } from './components/ConfirmacaoAcaoModal'
 import {
   formatCurrency,
   formatDateBR,
@@ -570,6 +571,7 @@ function App() {
   const [editingDestinacaoId, setEditingDestinacaoId] = useState('')
   const [editDestinacaoForm, setEditDestinacaoForm] = useState(createInitialEditDestinacaoForm())
   const [isSavingDestinacao, setIsSavingDestinacao] = useState(false)
+  const [isConfirmacaoModalOpen, setIsConfirmacaoModalOpen] = useState(false)
 
   const [empresaForm, setEmpresaForm] = useState({ razaoSocial: '', cnpj: '' })
   const [isEmpresaFormVisible, setIsEmpresaFormVisible] = useState(false)
@@ -2595,8 +2597,7 @@ function App() {
     }
   }
 
-  async function handleSalvarDestinacao(event) {
-  event.preventDefault()
+  async function handleSalvarDestinacao(acao) {
 
   if (isSavingDestinacao) {
     // Prevent duplicate submissions
@@ -2810,12 +2811,13 @@ function App() {
         }
       }
 
-      const pdf = generateDestinacaoPdf(pdfData)
-
-      const empresaSlug = slugifyFileName(nomeEmpresa) || 'operador-loterico'
-      const competenciaSlug = slugifyFileName(competenciaDocumento.replace('/', '-')) || 'sem-competencia'
-      pdf.save(`encaminhamento-destinacao-${empresaSlug}-${competenciaSlug}.pdf`)
-      documentoGerado = true
+      if (acao === 'baixar') {
+        const pdf = generateDestinacaoPdf(pdfData)
+        const empresaSlug = slugifyFileName(nomeEmpresa) || 'operador-loterico'
+        const competenciaSlug = slugifyFileName(competenciaDocumento.replace('/', '-')) || 'sem-competencia'
+        pdf.save(`encaminhamento-destinacao-${empresaSlug}-${competenciaSlug}.pdf`)
+        documentoGerado = true
+      }
     } catch (e) {
       console.error(e)
       toast.error('Destinações salvas, mas não foi possível gerar o documento de encaminhamento.')
@@ -2854,6 +2856,19 @@ function App() {
     setIsSavingDestinacao(false)
   }
 }
+
+  // Abre o modal de confirmação ao submeter o formulário principal
+  function handleAbrirConfirmacaoDestinacao(event) {
+    event.preventDefault()
+    if (isSavingDestinacao) return
+    setIsConfirmacaoModalOpen(true)
+  }
+
+  // Trata a escolha do usuário e chama o salvamento com a ação desejada
+  async function handleEscolhaAcaoDestinacao(tipo) {
+    setIsConfirmacaoModalOpen(false)
+    await handleSalvarDestinacao(tipo)
+  }
 
   async function handleSalvarOrigemManual(event) {
     event.preventDefault()
@@ -4209,7 +4224,7 @@ function App() {
     </div>
 
     {/* FORMULÁRIO PRINCIPAL DE DESTINAÇÃO */}
-    <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleSalvarDestinacao}>
+    <form className="grid gap-4 sm:grid-cols-2" onSubmit={handleAbrirConfirmacaoDestinacao}>
       {/* Data de solicitação */}
       <div>
         <label className="field-label" htmlFor="solicitacaoData">
@@ -4590,11 +4605,18 @@ function App() {
 
       {/* Botão Salvar */}
       <div className="sm:col-span-2">
-        <button className="btn-primary w-full" type="submit">
-          Salvar destinação
+        <button className="btn-primary w-full" type="submit" disabled={isSavingDestinacao}>
+          {isSavingDestinacao ? 'Salvando...' : 'Salvar destinação'}
         </button>
       </div>
     </form>
+
+    <ConfirmacaoAcaoModal
+      isOpen={isConfirmacaoModalOpen}
+      onClose={() => setIsConfirmacaoModalOpen(false)}
+      onEscolha={handleEscolhaAcaoDestinacao}
+      loading={isSavingDestinacao}
+    />
   </section>
 )}
 
