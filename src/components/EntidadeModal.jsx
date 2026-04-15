@@ -101,6 +101,25 @@ export function EntidadeModal({
             />
           </div>
 
+
+          <div>
+            <label className="field-label" htmlFor="modalEstadoEntidade">
+              Estado
+            </label>
+            <select
+              id="modalEstadoEntidade"
+              className="field-input"
+              value={entidadeForm.estado || 'PB'}
+              onChange={e => setEntidadeForm(current => ({ ...current, estado: e.target.value }))}
+            >
+              {require('../lib/brazilLocations').BRAZIL_STATES.map((uf) => (
+                <option key={uf.sigla} value={uf.sigla}>
+                  {uf.sigla} - {uf.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label className="field-label" htmlFor="modalCategoriaEntidade">
               Categoria

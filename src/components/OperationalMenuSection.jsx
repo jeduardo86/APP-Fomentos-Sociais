@@ -270,6 +270,9 @@ export function OperationalMenuSection({
                     }
                   })
                 }
+                readOnly={destForm.statusPagamento && destForm.statusPagamento !== 'pendente'}
+                disabled={destForm.statusPagamento && destForm.statusPagamento !== 'pendente'}
+                style={destForm.statusPagamento && destForm.statusPagamento !== 'pendente' ? { background: '#f3f4f6', cursor: 'not-allowed' } : {}}
               />
             </div>
 

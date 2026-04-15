@@ -2972,6 +2972,7 @@ function App() {
     setEditingDestinacaoId(item.id)
     setEditDestinacaoForm({
       entidadeId: String(item.entidadeId || '').trim(),
+      solicitacaoData: String(item.solicitacaoData || '').trim(),
       competencia: String(item.competencia || '').trim(),
       processoSolicitacaoEntidade: String(item.processoSolicitacaoEntidade || '').trim(),
       observacao: String(item.observacao || '').trim(),
@@ -3017,6 +3018,7 @@ function App() {
         {
           entidadeId: editDestinacaoForm.entidadeId,
           entidadeNome: entidade?.nome || '',
+          solicitacaoData: editDestinacaoForm.solicitacaoData,
           competencia: toCompetenciaMask(editDestinacaoForm.competencia),
           processoSolicitacaoEntidade: editDestinacaoForm.processoSolicitacaoEntidade,
           observacao: editDestinacaoForm.observacao,
@@ -4779,6 +4781,31 @@ function App() {
                                     </option>
                                   ))}
                                 </select>
+                              </div>
+
+                              <div>
+                                <label className="field-label" htmlFor={`edit-solicitacaoData-${item.id}`}>
+                                  Data de solicitação
+                                </label>
+                                <input
+                                  id={`edit-solicitacaoData-${item.id}`}
+                                  className="field-input"
+                                  type="date"
+                                  value={editDestinacaoForm.solicitacaoData || ''}
+                                  onChange={(event) =>
+                                    setEditDestinacaoForm((current) => ({
+                                      ...current,
+                                      solicitacaoData: event.target.value,
+                                      competencia: competenciaFromDate(event.target.value),
+                                    }))
+                                  }
+                                  disabled={item.statusPagamento !== 'pendente'}
+                                />
+                                {item.statusPagamento !== 'pendente' && (
+                                  <p className="mt-1 text-xs text-zinc-500">
+                                    Só é possível editar a data de solicitação enquanto a destinação estiver pendente.
+                                  </p>
+                                )}
                               </div>
 
                               <div>

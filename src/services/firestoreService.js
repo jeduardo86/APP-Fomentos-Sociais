@@ -125,46 +125,54 @@ function wait(ms) {
 }
 
 export async function syncBaseCsv(records, userId) {
-  const invalidRows = []
-  const normalizedRecords = records.map((record, index) => {
-    const processoId = String(record?.processoId || '').trim()
-
+  const invalidRows = [];
+  // Normaliza e agrupa por processoId
+  const grouped = {};
+  records.forEach((record, index) => {
+    const processoId = String(record?.processoId || '').trim();
     if (!processoId) {
-      invalidRows.push(Number(record?.__csvDataRowNumber) || index + 1)
+      invalidRows.push(Number(record?.__csvDataRowNumber) || index + 1);
+      return;
     }
-
-    return {
-      ...record,
-      processoId,
+    if (!grouped[processoId]) {
+      grouped[processoId] = { ...record, processoId };
+    } else {
+      // Soma campos numéricos relevantes
+      const fieldsToSum = ['valorPremio', 'incentivo', 'valorFomento'];
+      fieldsToSum.forEach((field) => {
+        const prev = Number(grouped[processoId][field] || 0);
+        const curr = Number(record[field] || 0);
+        grouped[processoId][field] = prev + curr;
+      });
     }
-  })
+  });
 
   if (invalidRows.length) {
-    const preview = invalidRows.slice(0, 10).join(', ')
-    const suffix = invalidRows.length > 10 ? ', ...' : ''
+    const preview = invalidRows.slice(0, 10).join(', ');
+    const suffix = invalidRows.length > 10 ? ', ...' : '';
     throw new Error(
       `CSV contém registro(s) sem processoId nas linhas ${preview}${suffix}. Verifique a coluna PROCESSO do arquivo.`,
-    )
+    );
   }
 
-  const batch = writeBatch(db)
-  const updatedAt = new Date().toISOString()
-
-  normalizedRecords.forEach(({ __csvDataRowNumber, ...record }) => {
-    const safeId = toSafeDocId(record.processoId)
-    const ref = doc(db, 'base_csv', safeId)
+  const batch = writeBatch(db);
+  const updatedAt = new Date().toISOString();
+  Object.values(grouped).forEach((record) => {
+    const { __csvDataRowNumber, ...rest } = record;
+    const safeId = toSafeDocId(rest.processoId);
+    const ref = doc(db, 'base_csv', safeId);
     batch.set(
       ref,
       {
-        ...record,
+        ...rest,
         updatedAt,
         updatedBy: userId || '',
       },
       { merge: true },
-    )
-  })
+    );
+  });
 
-  await batch.commit()
+  await batch.commit();
 }
 
 export async function createManualResourceSource(payload, userId) {

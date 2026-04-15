@@ -88,28 +88,47 @@ service cloud.firestore {
     }
 
     function validDestinacaoUpdate() {
-      return request.resource.data.processoId == resource.data.processoId
-        && request.resource.data.termo == resource.data.termo
-        && request.resource.data.empresa == resource.data.empresa
-        && request.resource.data.produto == resource.data.produto
-        && request.resource.data.valorFomento == resource.data.valorFomento
-        && request.resource.data.solicitacaoData == resource.data.solicitacaoData
-        && request.resource.data.entidadeId == resource.data.entidadeId
-        && request.resource.data.entidadeNome == resource.data.entidadeNome
-        && request.resource.data.valorDestinado == resource.data.valorDestinado
-        && request.resource.data.competencia == resource.data.competencia
-        && request.resource.data.statusPagamento in ['parcial', 'pago']
-        && request.resource.data.valorPagoAcumulado is number
-        && request.resource.data.valorPagoAcumulado > resource.data.valorPagoAcumulado
-        && request.resource.data.valorPagoAcumulado <= resource.data.valorDestinado
-        && request.resource.data.qtdPagamentos is number
-        && request.resource.data.qtdPagamentos > resource.data.qtdPagamentos
-        && request.resource.data.pgtoData is string
-        && request.resource.data.pgtoData.size() > 0
-        && request.resource.data.formaPgto is string
-        && request.resource.data.formaPgto.size() > 0
-        && (request.resource.data.statusPagamento == 'parcial'
-          || request.resource.data.valorPagoAcumulado == request.resource.data.valorDestinado);
+      // Permite edição completa para admins
+      return (
+        isAdmin()
+        || (
+          resource.data.statusPagamento == 'pendente'
+          && request.resource.data.processoId == resource.data.processoId
+          && request.resource.data.termo == resource.data.termo
+          && request.resource.data.empresa == resource.data.empresa
+          && request.resource.data.produto == resource.data.produto
+          && request.resource.data.valorFomento == resource.data.valorFomento
+          // permite alteração da data de solicitação
+          && request.resource.data.entidadeId == resource.data.entidadeId
+          && request.resource.data.entidadeNome == resource.data.entidadeNome
+          && request.resource.data.valorDestinado == resource.data.valorDestinado
+          && request.resource.data.competencia == resource.data.competencia
+          && request.resource.data.statusPagamento == 'pendente'
+          && request.resource.data.valorPagoAcumulado == 0
+          && request.resource.data.qtdPagamentos == 0
+        )
+        || (
+          (resource.data.statusPagamento in ['parcial', 'pago'])
+          && request.resource.data.processoId == resource.data.processoId
+          && request.resource.data.termo == resource.data.termo
+          && request.resource.data.empresa == resource.data.empresa
+          && request.resource.data.produto == resource.data.produto
+          && request.resource.data.valorFomento == resource.data.valorFomento
+          && request.resource.data.solicitacaoData == resource.data.solicitacaoData // não pode editar data se já pago/parcial
+          && request.resource.data.entidadeId == resource.data.entidadeId
+          && request.resource.data.entidadeNome == resource.data.entidadeNome
+          && request.resource.data.valorDestinado == resource.data.valorDestinado
+          && request.resource.data.competencia == resource.data.competencia
+          && request.resource.data.statusPagamento in ['parcial', 'pago']
+          && request.resource.data.valorPagoAcumulado is number
+          && request.resource.data.valorPagoAcumulado >= resource.data.valorPagoAcumulado
+          && request.resource.data.valorPagoAcumulado <= resource.data.valorDestinado
+          && request.resource.data.qtdPagamentos is number
+          && request.resource.data.qtdPagamentos >= resource.data.qtdPagamentos
+          && request.resource.data.pgtoData is string
+          && request.resource.data.formaPgto is string
+        )
+      );
     }
 
     function validDestinacaoDelete() {
