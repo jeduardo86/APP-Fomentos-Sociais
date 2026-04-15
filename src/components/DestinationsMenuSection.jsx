@@ -360,7 +360,12 @@ export function DestinationsMenuSection({
             </div>
 
             <div className="sm:col-span-2">
-              <button className="btn-primary w-full" type="submit" disabled={salvando}>
+              <button
+                className="btn-primary w-full"
+                type="submit"
+                disabled={salvando}
+                aria-busy={salvando}
+              >
                 {salvando ? 'Salvando...' : 'Salvar destinação'}
               </button>
             </div>
