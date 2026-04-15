@@ -18,11 +18,17 @@ export function getValorFomentoFromProcess(item) {
   const baseCalculo = getBaseCalculoFomentoFromProcess(item)
   const valorMinimo = Number(item?.valorFomentoMinimo || 0)
 
-  if (baseCalculo > 0) {
-    return Math.max(baseCalculo * 0.075, valorMinimo)
+  // Valor mínimo de 60 UFR-PB
+  let valorMinimoUfr = 0;
+  if (item?.ufrPbValue) {
+    valorMinimoUfr = item.ufrPbValue * 60;
   }
 
-  return Math.max(Number(item?.valorFomento || 0), valorMinimo)
+  if (baseCalculo > 0) {
+    return Math.max(baseCalculo * 0.075, valorMinimo, valorMinimoUfr)
+  }
+
+  return Math.max(Number(item?.valorFomento || 0), valorMinimo, valorMinimoUfr)
 }
 
 export function getBaseCalculoFomentoFromProcess(item) {
@@ -30,7 +36,10 @@ export function getBaseCalculoFomentoFromProcess(item) {
   const incentivo = Number(item?.incentivo || 0)
 
   if (premio > 0 || incentivo > 0) {
-    return premio + Math.max(0, incentivo - premio * 0.15)
+    const quinzePorcentoPremio = premio * 0.15;
+    const quinzePorcentoIncentivo = incentivo * 0.15;
+    const incentivoConsiderado = quinzePorcentoIncentivo >= quinzePorcentoPremio ? quinzePorcentoIncentivo : 0;
+    return premio + incentivoConsiderado;
   }
 
   const valorFomento = Number(item?.valorFomento || 0)
