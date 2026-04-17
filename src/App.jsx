@@ -49,6 +49,7 @@ import {
 
 // Import the new UFR-PB Calculator component
 import UfrPbCalculator from './components/UfrPbCalculator'
+import ChangePasswordModal from './components/ChangePasswordModal'
 
 // Add a new menu item for the calculator
 const additionalMenuTabs = [
@@ -608,11 +609,14 @@ function App() {
     password: '',
     role: 'OPERADOR',
   })
+
+  // State for Change Password Modal (must be at top level)
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false)
+
   const [isLargeFontEnabled, setIsLargeFontEnabled] = useState(() => {
     if (typeof window === 'undefined') {
       return false
     }
-
     return window.localStorage.getItem(FONT_SIZE_STORAGE_KEY) === 'large'
   })
 
@@ -3809,6 +3813,7 @@ function App() {
       <div className="pointer-events-none absolute -left-24 -top-24 h-64 w-64 rounded-full bg-cyan-300/30 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-28 -right-16 h-72 w-72 rounded-full bg-orange-300/30 blur-3xl" />
       <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
+      <ChangePasswordModal isOpen={isChangePasswordOpen} onClose={() => setIsChangePasswordOpen(false)} />
 
       <main className="relative z-10 mx-auto flex w-full max-w-[1720px] gap-6 lg:items-stretch">
         <aside className="hidden w-64 shrink-0 lg:block lg:self-stretch xl:w-72">
@@ -3867,6 +3872,7 @@ function App() {
                 </p>
               </div>
 
+
               <button
                 type="button"
                 className={
@@ -3879,6 +3885,14 @@ function App() {
                 title="Alternar modo de fonte grande"
               >
                 {isLargeFontEnabled ? 'Fonte grande: ligada' : 'Fonte grande: desligada'}
+              </button>
+
+              <button
+                type="button"
+                className="w-full rounded-xl border border-cyan-200 bg-cyan-50 px-4 py-2 text-left text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100"
+                onClick={() => setIsChangePasswordOpen(true)}
+              >
+                Alterar senha
               </button>
 
               <button
