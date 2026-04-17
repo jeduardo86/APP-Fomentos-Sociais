@@ -502,6 +502,8 @@ function createInitialEditDestinacaoForm() {
 }
 
 function App() {
+    // Sugestão de alteração de senha no primeiro acesso
+    const [showSuggestChangePassword, setShowSuggestChangePassword] = useState(false)
   const todayInputDate = getTodayInputDate()
 
   const [authLoading, setAuthLoading] = useState(true)
@@ -648,10 +650,47 @@ function App() {
     const unsub = subscribeAuthState((sessionUser) => {
       setUser(sessionUser)
       setAuthLoading(false)
+      // Sugerir alteração de senha no primeiro acesso
+      if (sessionUser && sessionUser.providerData?.[0]?.providerId === 'password') {
+        // Checa se já sugeriu para este usuário
+        const key = `password-changed-v1-${sessionUser.uid}`
+        if (!window.localStorage.getItem(key)) {
+          setTimeout(() => setShowSuggestChangePassword(true), 500)
+        }
+      }
     })
-
     return () => unsub()
   }, [])
+  // Quando o usuário alterar a senha, marca como sugerido
+  function handleCloseSuggestChangePassword() {
+    if (user) {
+      const key = `password-changed-v1-${user.uid}`
+      window.localStorage.setItem(key, '1')
+    }
+    setShowSuggestChangePassword(false)
+  }
+  // ...existing code...
+  // Renderização do modal de sugestão de alteração de senha
+  {showSuggestChangePassword && (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="bg-white rounded-lg shadow-lg p-6 max-w-md w-full relative">
+        <button
+          className="absolute top-2 right-2 text-zinc-400 hover:text-zinc-700"
+          onClick={handleCloseSuggestChangePassword}
+          aria-label="Fechar"
+        >×</button>
+        <h2 className="text-lg font-semibold mb-2">Por segurança, altere sua senha</h2>
+        <p className="mb-4 text-zinc-600">Recomendamos que você altere sua senha no primeiro acesso para garantir a segurança da sua conta.</p>
+        <button
+          className="btn-primary w-full"
+          onClick={() => {
+            setIsChangePasswordOpen(true)
+            handleCloseSuggestChangePassword()
+          }}
+        >Alterar senha agora</button>
+      </div>
+    </div>
+  )}
 
   useEffect(() => {
     const root = document.documentElement
