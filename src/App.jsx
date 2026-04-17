@@ -6982,6 +6982,7 @@ function App() {
                 />
               </div>
 
+
               <div>
                 <label className="field-label" htmlFor="origemManualTipoFomento">
                   Tipo de Fomento
@@ -7005,26 +7006,54 @@ function App() {
                 </select>
               </div>
 
-              <div className="sm:col-span-2">
-                <label className="field-label" htmlFor="origemManualProcessoId">
-                  Identificador do processo (opcional)
-                </label>
-                <input
-                  id="origemManualProcessoId"
-                  className="field-input"
-                  value={origemManualForm.processoId}
-                  onChange={(event) =>
-                    setOrigemManualForm((current) => ({
-                      ...current,
-                      processoId: event.target.value,
-                    }))
-                  }
-                  placeholder="Ex.: LTP-PRC-2026/00001"
-                />
-                <p className="mt-1 text-xs text-zinc-500">
-                  Se não informar, o sistema gera um identificador automático.
-                </p>
+              {/* Processo e competência lado a lado */}
+              <div className="sm:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="field-label" htmlFor="origemManualProcessoId">
+                    Identificador do processo (opcional)
+                  </label>
+                  <input
+                    id="origemManualProcessoId"
+                    className="field-input"
+                    value={origemManualForm.processoId}
+                    onChange={(event) =>
+                      setOrigemManualForm((current) => ({
+                        ...current,
+                        processoId: event.target.value,
+                      }))
+                    }
+                    placeholder="Ex.: LTP-PRC-2026/00001"
+                  />
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Se não informar, o sistema gera um identificador automático.
+                  </p>
+                </div>
+                <div>
+                  <label className="field-label" htmlFor="origemManualCompetencia">
+                    Competência do lançamento (MM/AAAA)
+                  </label>
+                  <input
+                    id="origemManualCompetencia"
+                    className="field-input"
+                    type="text"
+                    maxLength={7}
+                    placeholder="04/2026"
+                    value={origemManualForm.competencia || ''}
+                    onChange={e => {
+                      // Aceita apenas MM/AAAA
+                      let v = e.target.value.replace(/[^\d/]/g, '').slice(0, 7)
+                      // Aplica máscara MM/AAAA
+                      if (v.length === 2 && !v.includes('/')) v = v + '/'
+                      setOrigemManualForm(current => ({ ...current, competencia: v }))
+                    }}
+                    inputMode="numeric"
+                    pattern="^(0[1-9]|1[0-2])/\d{4}$"
+                  />
+                  <p className="mt-1 text-xs text-zinc-500">Permite salvar o mesmo processo em várias competências.</p>
+                </div>
               </div>
+
+
 
               <div className="sm:col-span-2 flex flex-wrap justify-end gap-2">
                 <button
