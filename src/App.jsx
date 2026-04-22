@@ -4052,7 +4052,7 @@ function App() {
             className="btn-primary"
             onClick={() => setIsOrigemManualModalOpen(true)}
           >
-            Cadastrar Fomento
+            Cadastrar Origem de Fomento
           </button>
         </div>
       </div>
@@ -6970,7 +6970,7 @@ function App() {
           >
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-zinc-900">Cadastrar Fomento</h2>
+                <h2 className="text-lg font-semibold text-zinc-900">Cadastrar Origem de Fomento</h2>
                 <p className="mt-1 text-sm text-zinc-600">
                   Informe o Operador Lotérico e o valor total disponível para incluir uma origem manual no fluxo.
                 </p>
@@ -7117,7 +7117,7 @@ function App() {
                   Cancelar
                 </button>
                 <button className="btn-primary" type="submit">
-                  Cadastrar Fomento
+                  Cadastrar origem de Fomento
                 </button>
               </div>
             </form>
