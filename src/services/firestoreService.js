@@ -251,6 +251,17 @@ export async function createDestinacao(payload) {
   const existentesQuery = query(collections.destinacoes, where('processoId', '==', processoId))
   const existentesSnapshot = await getDocs(existentesQuery)
 
+  // Verificar se já existe destinação para a mesma competência
+  const competencia = String(payload?.competencia || '').trim()
+  const duplicada = existentesSnapshot.docs.some((doc) => {
+    const data = doc.data()
+    return String(data?.competencia || '').trim() === competencia
+  })
+
+  if (duplicada) {
+    throw new Error('Já existe uma destinação para este processo nesta competência. Para destinar novamente, use uma competência diferente.')
+  }
+
   const totalJaDestinadoCents = existentesSnapshot.docs.reduce(
     (acc, entry) => acc + toMoneyCents(entry.data().valorDestinado),
     0,

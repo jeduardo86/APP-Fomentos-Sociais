@@ -4170,7 +4170,7 @@ function App() {
       )}
 
       {processosEmpresa.length === 0 && (
-        <p className="text-sm text-zinc-500">Nenhum processo com saldo disponível para a empresa.</p>
+        <p className="text-sm text-zinc-500">Nenhum processo com saldo disponível para a empresa selecionada.</p>
       )}
 
       {processosEmpresa.length > 0 && processosEmpresaFiltrados.length === 0 && (
@@ -7117,7 +7117,7 @@ function App() {
                   Cancelar
                 </button>
                 <button className="btn-primary" type="submit">
-                  Cadastrar origem de Fomento
+                  Cadastrar Origem de Fomento
                 </button>
               </div>
             </form>
