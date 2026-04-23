@@ -590,7 +590,7 @@ function App() {
     tipoFomento: 'Instantâneas',
     competencia: '',
   })
-  const [editingOrigemManualProcessoId, setEditingOrigemManualProcessoId] = useState('')
+  const [editingOrigemManualDocId, setEditingOrigemManualDocId] = useState('')
   const [isOrigemManualModalOpen, setIsOrigemManualModalOpen] = useState(false)
   const [manualOriginToDelete, setManualOriginToDelete] = useState(null)
   const [isConfirmacaoExcluirOrigemManualOpen, setIsConfirmacaoExcluirOrigemManualOpen] = useState(false)
@@ -647,7 +647,7 @@ function App() {
       tipoFomento: 'Instantâneas',
       competencia: '',
     })
-    setEditingOrigemManualProcessoId('')
+    setEditingOrigemManualDocId('')
   }
 
   function handleAbrirOrigemManualModal() {
@@ -667,7 +667,7 @@ function App() {
       tipoFomento: String(item.tipoFomento || 'Instantâneas'),
       competencia: String(item.competencia || '').trim(),
     })
-    setEditingOrigemManualProcessoId(String(item.processoId || '').trim().toUpperCase())
+    setEditingOrigemManualDocId(String(item.id || '').trim())
     setIsOrigemManualModalOpen(true)
   }
 
@@ -684,14 +684,14 @@ function App() {
     }
 
     try {
-      await deleteManualResourceSource(manualOriginToDelete.processoId, user.uid)
+      await deleteManualResourceSource(manualOriginToDelete.id, user.uid)
       toast.success('Origem manual excluída com sucesso.')
     } catch (error) {
       toast.error(error?.message || 'Não foi possível excluir a origem manual.')
     } finally {
       setManualOriginToDelete(null)
       setIsConfirmacaoExcluirOrigemManualOpen(false)
-      if (editingOrigemManualProcessoId === String(manualOriginToDelete?.processoId || '').trim().toUpperCase()) {
+      if (editingOrigemManualDocId === String(manualOriginToDelete?.id || '').trim()) {
         resetOrigemManualForm()
       }
     }
@@ -3016,13 +3016,15 @@ function App() {
       return
     }
 
-    if (!editingOrigemManualProcessoId) {
+    if (!editingOrigemManualDocId) {
       const processoDuplicado = baseCsv.some(
-        (item) => String(item?.processoId || '').trim().toUpperCase() === processoId,
+        (item) => 
+          String(item?.processoId || '').trim().toUpperCase() === processoId &&
+          String(item?.competencia || '').trim() === competencia
       )
 
       if (processoDuplicado) {
-        toast.error('Já existe um processo com esse identificador. Informe outro código.')
+        toast.error('Já existe um processo com esse identificador e competência. Informe outro código ou competência diferente.')
         return
       }
     }
@@ -3042,8 +3044,8 @@ function App() {
         competencia,
       }
 
-      if (editingOrigemManualProcessoId) {
-        await updateManualResourceSource(payload, user.uid)
+      if (editingOrigemManualDocId) {
+        await updateManualResourceSource(payload, editingOrigemManualDocId, user.uid)
       } else {
         await createManualResourceSource(payload, user.uid)
       }
@@ -3062,7 +3064,7 @@ function App() {
       setIsOrigemManualModalOpen(false)
 
       toast.success(
-        editingOrigemManualProcessoId
+        editingOrigemManualDocId
           ? 'Origem manual atualizada com sucesso.'
           : 'Origem manual cadastrada. Ela já está disponível para destinação.',
       )
@@ -7116,7 +7118,7 @@ function App() {
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-lg font-semibold text-zinc-900">
-                  {editingOrigemManualProcessoId ? 'Editar Origem de Fomento' : 'Cadastrar Origem de Fomento'}
+                  {editingOrigemManualDocId ? 'Editar Origem de Fomento' : 'Cadastrar Origem de Fomento'}
                 </h2>
                 <p className="mt-1 text-sm text-zinc-600">
                   Informe o Operador Lotérico e o valor total disponível para incluir ou atualizar uma origem manual no fluxo.
@@ -7226,10 +7228,10 @@ function App() {
                       }))
                     }
                     placeholder="Ex.: LTP-PRC-2026/00001"
-                    disabled={Boolean(editingOrigemManualProcessoId)}
+                    disabled={Boolean(editingOrigemManualDocId)}
                   />
                   <p className="mt-1 text-xs text-zinc-500">
-                    {editingOrigemManualProcessoId
+                    {editingOrigemManualDocId
                       ? 'O identificador do processo não pode ser alterado durante a edição.'
                       : 'Se não informar, o sistema gera um identificador automático.'}
                   </p>
@@ -7273,7 +7275,7 @@ function App() {
                   Cancelar
                 </button>
                 <button className="btn-primary" type="submit">
-                  {editingOrigemManualProcessoId ? 'Salvar alterações' : 'Cadastrar Origem de Fomento'}
+                  {editingOrigemManualDocId ? 'Salvar alterações' : 'Cadastrar Origem de Fomento'}
                 </button>
               </div>
             </form>

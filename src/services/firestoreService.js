@@ -193,16 +193,9 @@ export async function createManualResourceSource(payload, userId) {
     throw new Error('Informe um valor de fomento maior que zero.')
   }
 
-  const ref = doc(db, 'base_csv', toSafeDocId(processoId))
-  const snapshot = await getDoc(ref)
-
-  if (snapshot.exists()) {
-    throw new Error('Já existe um processo com este identificador na base. Use outro código.')
-  }
-
   const now = new Date().toISOString()
 
-  await setDoc(ref, {
+  await addDoc(collections.baseCsv, {
     processoId,
     termo: tipoFomento,
     tipoFomento,
@@ -222,7 +215,7 @@ export async function createManualResourceSource(payload, userId) {
   })
 }
 
-export async function updateManualResourceSource(payload, userId) {
+export async function updateManualResourceSource(payload, docId, userId) {
   const processoId = String(payload?.processoId || '').trim()
   const empresa = String(payload?.empresa || '').trim()
   const tipoFomento = String(payload?.tipoFomento || '').trim() || 'Instantâneas'
@@ -240,7 +233,7 @@ export async function updateManualResourceSource(payload, userId) {
     throw new Error('Informe um valor de fomento maior que zero.')
   }
 
-  const ref = doc(db, 'base_csv', toSafeDocId(processoId))
+  const ref = doc(db, 'base_csv', docId)
   const snapshot = await getDoc(ref)
 
   if (!snapshot.exists()) {
@@ -266,14 +259,14 @@ export async function updateManualResourceSource(payload, userId) {
   })
 }
 
-export async function deleteManualResourceSource(processoId, userId) {
-  const cleanedProcessoId = String(processoId || '').trim()
+export async function deleteManualResourceSource(docId, userId) {
+  const cleanedDocId = String(docId || '').trim()
 
-  if (!cleanedProcessoId) {
-    throw new Error('Informe um identificador de processo para excluir a origem manual.')
+  if (!cleanedDocId) {
+    throw new Error('Informe um ID de documento para excluir a origem manual.')
   }
 
-  const ref = doc(db, 'base_csv', toSafeDocId(cleanedProcessoId))
+  const ref = doc(db, 'base_csv', cleanedDocId)
   const snapshot = await getDoc(ref)
 
   if (!snapshot.exists()) {
@@ -288,7 +281,7 @@ export async function deleteManualResourceSource(processoId, userId) {
   await deleteDoc(ref)
 
   if (userId) {
-    console.info(`Origem manual ${cleanedProcessoId} excluída por ${userId}.`)
+    console.info(`Origem manual ${cleanedDocId} excluída por ${userId}.`)
   }
 }
 
