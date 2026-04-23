@@ -213,12 +213,83 @@ export async function createManualResourceSource(payload, userId) {
     incentivo: 0,
     valorFomento: fromMoneyCents(valorFomentoCents),
     origemTipo: 'manual',
+    competencia: String(payload?.competencia || '').trim(),
     syncedAt: now,
     createdAt: now,
     updatedAt: now,
     createdBy: userId || '',
     updatedBy: userId || '',
   })
+}
+
+export async function updateManualResourceSource(payload, userId) {
+  const processoId = String(payload?.processoId || '').trim()
+  const empresa = String(payload?.empresa || '').trim()
+  const tipoFomento = String(payload?.tipoFomento || '').trim() || 'Instantâneas'
+  const valorFomentoCents = toMoneyCents(payload?.valorFomento)
+
+  if (!processoId) {
+    throw new Error('Informe um identificador de processo para editar a origem manual.')
+  }
+
+  if (!empresa) {
+    throw new Error('Selecione uma empresa válida para a origem manual.')
+  }
+
+  if (valorFomentoCents <= 0) {
+    throw new Error('Informe um valor de fomento maior que zero.')
+  }
+
+  const ref = doc(db, 'base_csv', toSafeDocId(processoId))
+  const snapshot = await getDoc(ref)
+
+  if (!snapshot.exists()) {
+    throw new Error('Origem manual não encontrada para edição.')
+  }
+
+  const current = snapshot.data()
+  if (String(current?.origemTipo || '').trim().toLowerCase() !== 'manual') {
+    throw new Error('Apenas origens manuais podem ser editadas por este formulário.')
+  }
+
+  const now = new Date().toISOString()
+
+  await updateDoc(ref, {
+    empresa,
+    cnpj: String(payload?.cnpj || '').trim(),
+    produto: String(payload?.produto || tipoFomento).trim() || tipoFomento,
+    tipoFomento,
+    competencia: String(payload?.competencia || '').trim(),
+    valorFomento: fromMoneyCents(valorFomentoCents),
+    updatedAt: now,
+    updatedBy: userId || '',
+  })
+}
+
+export async function deleteManualResourceSource(processoId, userId) {
+  const cleanedProcessoId = String(processoId || '').trim()
+
+  if (!cleanedProcessoId) {
+    throw new Error('Informe um identificador de processo para excluir a origem manual.')
+  }
+
+  const ref = doc(db, 'base_csv', toSafeDocId(cleanedProcessoId))
+  const snapshot = await getDoc(ref)
+
+  if (!snapshot.exists()) {
+    throw new Error('Origem manual não encontrada para exclusão.')
+  }
+
+  const current = snapshot.data()
+  if (String(current?.origemTipo || '').trim().toLowerCase() !== 'manual') {
+    throw new Error('Apenas origens manuais podem ser excluídas por este formulário.')
+  }
+
+  await deleteDoc(ref)
+
+  if (userId) {
+    console.info(`Origem manual ${cleanedProcessoId} excluída por ${userId}.`)
+  }
 }
 
 export async function createDestinacao(payload) {

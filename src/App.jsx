@@ -25,6 +25,8 @@ import {
 import {
   collections,
   createManualResourceSource,
+  updateManualResourceSource,
+  deleteManualResourceSource,
   createUserProfileByAdmin,
   createDestinacao,
   deleteEmpresa,
@@ -50,6 +52,7 @@ import {
 // Import the new UFR-PB Calculator component
 import UfrPbCalculator from './components/UfrPbCalculator'
 import ChangePasswordModal from './components/ChangePasswordModal'
+import { ConfirmacaoModal } from './components/ConfirmacaoModal'
 
 // Add a new menu item for the calculator
 const additionalMenuTabs = [
@@ -66,6 +69,7 @@ const destinationTabs = [
 const cadastroTabs = [
   { id: 'empresas', label: 'Cadastro de operadores lotéricos' },
   { id: 'entidades', label: 'Cadastro de entidades' },
+  { id: 'origem-fomento', label: 'Origem de Fomento' },
   { id: 'usuarios', label: 'Cadastro de usuários' },
 ]
 
@@ -584,8 +588,12 @@ function App() {
     valorFomento: 0,
     processoId: '',
     tipoFomento: 'Instantâneas',
+    competencia: '',
   })
+  const [editingOrigemManualProcessoId, setEditingOrigemManualProcessoId] = useState('')
   const [isOrigemManualModalOpen, setIsOrigemManualModalOpen] = useState(false)
+  const [manualOriginToDelete, setManualOriginToDelete] = useState(null)
+  const [isConfirmacaoExcluirOrigemManualOpen, setIsConfirmacaoExcluirOrigemManualOpen] = useState(false)
   const [entidadeForm, setEntidadeForm] = useState(createInitialEntidadeForm())
   const [isEntidadeFormVisible, setIsEntidadeFormVisible] = useState(false)
   const [editingEntidadeId, setEditingEntidadeId] = useState('')
@@ -630,6 +638,64 @@ function App() {
   const visibleCadastroTabs = isAdmin
     ? cadastroTabs
     : cadastroTabs.filter((tab) => tab.id === 'empresas' || tab.id === 'entidades')
+
+  function resetOrigemManualForm() {
+    setOrigemManualForm({
+      empresaId: '',
+      valorFomento: 0,
+      processoId: '',
+      tipoFomento: 'Instantâneas',
+      competencia: '',
+    })
+    setEditingOrigemManualProcessoId('')
+  }
+
+  function handleAbrirOrigemManualModal() {
+    resetOrigemManualForm()
+    setIsOrigemManualModalOpen(true)
+  }
+
+  function handleEditarOrigemManual(item) {
+    const matchedEmpresa = empresasCadastroOptions.find(
+      (entry) => entry.cnpj === String(item.cnpj || '').trim() || entry.razaoSocial === String(item.empresa || '').trim(),
+    )
+
+    setOrigemManualForm({
+      empresaId: matchedEmpresa?.id || '',
+      valorFomento: Number(item.valorFomento || 0),
+      processoId: String(item.processoId || '').trim().toUpperCase(),
+      tipoFomento: String(item.tipoFomento || 'Instantâneas'),
+      competencia: String(item.competencia || '').trim(),
+    })
+    setEditingOrigemManualProcessoId(String(item.processoId || '').trim().toUpperCase())
+    setIsOrigemManualModalOpen(true)
+  }
+
+  function handleSolicitarExcluirOrigemManual(item) {
+    setManualOriginToDelete(item)
+    setIsConfirmacaoExcluirOrigemManualOpen(true)
+  }
+
+  async function handleConfirmarExcluirOrigemManual() {
+    if (!user || !isAdmin || !manualOriginToDelete) {
+      setManualOriginToDelete(null)
+      setIsConfirmacaoExcluirOrigemManualOpen(false)
+      return
+    }
+
+    try {
+      await deleteManualResourceSource(manualOriginToDelete.processoId, user.uid)
+      toast.success('Origem manual excluída com sucesso.')
+    } catch (error) {
+      toast.error(error?.message || 'Não foi possível excluir a origem manual.')
+    } finally {
+      setManualOriginToDelete(null)
+      setIsConfirmacaoExcluirOrigemManualOpen(false)
+      if (editingOrigemManualProcessoId === String(manualOriginToDelete?.processoId || '').trim().toUpperCase()) {
+        resetOrigemManualForm()
+      }
+    }
+  }
 
   function handleRealtimeAccessError(error) {
     const message = error?.message || 'Não foi possível acompanhar atualizações em tempo real.'
@@ -817,6 +883,17 @@ function App() {
       return acc
     }, {})
   }, [destinacoes])
+
+  const manualOrigins = useMemo(() => {
+    return baseCsv
+      .filter((item) => String(item.origemTipo || '').trim().toLowerCase() === 'manual')
+      .sort((a, b) =>
+        String(a.processoId || '').trim().localeCompare(String(b.processoId || '').trim(), 'pt-BR', {
+          numeric: true,
+          sensitivity: 'base',
+        }),
+      )
+  }, [baseCsv])
 
   const empresasDestinacaoOptions = useMemo(() => {
     const mapa = new Map()
@@ -2927,6 +3004,7 @@ function App() {
     const valorFomento = Number(origemManualForm.valorFomento || 0)
     const processoIdDigitado = String(origemManualForm.processoId || '').trim().toUpperCase()
     const processoId = processoIdDigitado || generateManualProcessId()
+    const competencia = String(origemManualForm.competencia || '').trim()
 
     if (!empresaSelecionadaCadastro) {
       toast.error('Selecione uma empresa cadastrada para a origem manual.')
@@ -2938,13 +3016,15 @@ function App() {
       return
     }
 
-    const processoDuplicado = baseCsv.some(
-      (item) => String(item?.processoId || '').trim().toUpperCase() === processoId,
-    )
+    if (!editingOrigemManualProcessoId) {
+      const processoDuplicado = baseCsv.some(
+        (item) => String(item?.processoId || '').trim().toUpperCase() === processoId,
+      )
 
-    if (processoDuplicado) {
-      toast.error('Já existe um processo com esse identificador. Informe outro código.')
-      return
+      if (processoDuplicado) {
+        toast.error('Já existe um processo com esse identificador. Informe outro código.')
+        return
+      }
     }
 
     const tipoFomento = tipoFomentoOptions.includes(origemManualForm.tipoFomento)
@@ -2952,17 +3032,21 @@ function App() {
       : 'Instantâneas'
 
     try {
-      await createManualResourceSource(
-        {
-          processoId,
-          empresa: empresaSelecionadaCadastro.razaoSocial,
-          cnpj: empresaSelecionadaCadastro.cnpj,
-          produto: tipoFomento,
-          tipoFomento,
-          valorFomento,
-        },
-        user.uid,
-      )
+      const payload = {
+        processoId,
+        empresa: empresaSelecionadaCadastro.razaoSocial,
+        cnpj: empresaSelecionadaCadastro.cnpj,
+        produto: tipoFomento,
+        tipoFomento,
+        valorFomento,
+        competencia,
+      }
+
+      if (editingOrigemManualProcessoId) {
+        await updateManualResourceSource(payload, user.uid)
+      } else {
+        await createManualResourceSource(payload, user.uid)
+      }
 
       const empresaKey = getEmpresaGroupKey(
         empresaSelecionadaCadastro.cnpj,
@@ -2974,17 +3058,19 @@ function App() {
       setSelectedProcessValues({})
       setValorAlvoDestinacao(0)
       setFiltroProcessoDestinacao('')
-      setOrigemManualForm({
-        empresaId: '',
-        valorFomento: 0,
-        processoId: '',
-        tipoFomento: 'Instantâneas',
-      })
+      resetOrigemManualForm()
       setIsOrigemManualModalOpen(false)
 
-      toast.success('Origem manual cadastrada. Ela já está disponível para destinação.')
+      toast.success(
+        editingOrigemManualProcessoId
+          ? 'Origem manual atualizada com sucesso.'
+          : 'Origem manual cadastrada. Ela já está disponível para destinação.',
+      )
     } catch (error) {
-      toast.error(error?.message || 'Não foi possível cadastrar a origem manual de recurso.')
+      toast.error(
+        error?.message ||
+          'Não foi possível salvar a origem manual de recurso. Verifique os dados e tente novamente.',
+      )
     }
   }
 
@@ -4037,26 +4123,6 @@ function App() {
               {activeTab === 'destinacao' && (
   <section className="mt-5 space-y-5 animate-in">
     <h2 className="text-lg font-semibold text-zinc-900">Formulário de destinação</h2>
-
-    {isAdmin && (
-      <div className="rounded-2xl border border-cyan-200/80 bg-cyan-50/40 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-cyan-900">Origem manual de recurso</p>
-            <p className="text-xs text-cyan-800">
-              Cadastre processos como origem de fomento fora do arquivo de importação, para seguir no fluxo normal de destinações.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => setIsOrigemManualModalOpen(true)}
-          >
-            Cadastrar Origem de Fomento
-          </button>
-        </div>
-      </div>
-    )}
 
     <div>
       <label className="field-label" htmlFor="empresaSelecionada">
@@ -5995,6 +6061,82 @@ function App() {
                 </section>
               )}
 
+              {isAdmin && activeCadastroTab === 'origem-fomento' && (
+                <section className="mt-5 animate-in space-y-4">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h2 className="text-lg font-semibold text-zinc-900">Origem de Fomento</h2>
+                      <p className="text-sm text-zinc-600">
+                        Cadastre, edite e exclua lançamentos manuais de origem de fomento para o fluxo de destinações.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      onClick={handleAbrirOrigemManualModal}
+                    >
+                      Cadastrar Origem de Fomento
+                    </button>
+                  </div>
+
+                  {manualOrigins.length === 0 ? (
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-center">
+                      <p className="text-sm text-zinc-600">Nenhuma origem de fomento manual cadastrada.</p>
+                      <p className="mt-2 text-xs text-zinc-500">
+                        Clique no botão acima para começar a adicionar lançamentos manuais.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="space-y-3">
+                        {manualOrigins.map((item) => (
+                          <div
+                            key={`${String(item.processoId || '').trim()}-${String(item.competencia || '').trim()}`}
+                            className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                          >
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <div>
+                                <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Processo</p>
+                                <p className="font-semibold text-zinc-900">{item.processoId || '—'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Competência</p>
+                                <p className="font-semibold text-zinc-900">{item.competencia || 'Não informada'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Operador</p>
+                                <p className="font-semibold text-zinc-900">{item.empresa || '—'}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs uppercase tracking-[0.16em] text-zinc-500">Fomento disponível</p>
+                                <p className="font-semibold text-emerald-700">{formatCurrency(item.valorFomento)}</p>
+                              </div>
+                            </div>
+
+                            <div className="mt-4 flex flex-wrap justify-end gap-2">
+                              <button
+                                type="button"
+                                className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-sm font-semibold text-cyan-800 transition hover:bg-cyan-100"
+                                onClick={() => handleEditarOrigemManual(item)}
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-800 transition hover:bg-rose-100"
+                                onClick={() => handleSolicitarExcluirOrigemManual(item)}
+                              >
+                                Excluir
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </section>
+              )}
+
               {isAdmin && activeCadastroTab === 'usuarios' && (
                 <section className="mt-5 animate-in space-y-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -6962,7 +7104,10 @@ function App() {
       {isOrigemManualModalOpen && (
         <div
           className="fixed inset-0 z-30 flex items-center justify-center bg-zinc-900/45 p-4 backdrop-blur-[1px]"
-          onClick={() => setIsOrigemManualModalOpen(false)}
+          onClick={() => {
+            resetOrigemManualForm()
+            setIsOrigemManualModalOpen(false)
+          }}
         >
           <div
             className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:p-6"
@@ -6970,15 +7115,20 @@ function App() {
           >
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold text-zinc-900">Cadastrar Origem de Fomento</h2>
+                <h2 className="text-lg font-semibold text-zinc-900">
+                  {editingOrigemManualProcessoId ? 'Editar Origem de Fomento' : 'Cadastrar Origem de Fomento'}
+                </h2>
                 <p className="mt-1 text-sm text-zinc-600">
-                  Informe o Operador Lotérico e o valor total disponível para incluir uma origem manual no fluxo.
+                  Informe o Operador Lotérico e o valor total disponível para incluir ou atualizar uma origem manual no fluxo.
                 </p>
               </div>
               <button
                 type="button"
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
-                onClick={() => setIsOrigemManualModalOpen(false)}
+                onClick={() => {
+                  resetOrigemManualForm()
+                  setIsOrigemManualModalOpen(false)
+                }}
               >
                 Fechar
               </button>
@@ -7076,9 +7226,12 @@ function App() {
                       }))
                     }
                     placeholder="Ex.: LTP-PRC-2026/00001"
+                    disabled={Boolean(editingOrigemManualProcessoId)}
                   />
                   <p className="mt-1 text-xs text-zinc-500">
-                    Se não informar, o sistema gera um identificador automático.
+                    {editingOrigemManualProcessoId
+                      ? 'O identificador do processo não pode ser alterado durante a edição.'
+                      : 'Se não informar, o sistema gera um identificador automático.'}
                   </p>
                 </div>
                 <div>
@@ -7112,18 +7265,35 @@ function App() {
                 <button
                   type="button"
                   className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-zinc-700 transition hover:bg-slate-50"
-                  onClick={() => setIsOrigemManualModalOpen(false)}
+                  onClick={() => {
+                    resetOrigemManualForm()
+                    setIsOrigemManualModalOpen(false)
+                  }}
                 >
                   Cancelar
                 </button>
                 <button className="btn-primary" type="submit">
-                  Cadastrar Origem de Fomento
+                  {editingOrigemManualProcessoId ? 'Salvar alterações' : 'Cadastrar Origem de Fomento'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      <ConfirmacaoModal
+        isOpen={isConfirmacaoExcluirOrigemManualOpen}
+        title="Excluir origem manual"
+        message={`Confirma excluir a origem manual do processo ${manualOriginToDelete?.processoId || '--'}? Essa ação não pode ser desfeita.`}
+        confirmLabel="Excluir"
+        cancelLabel="Cancelar"
+        onConfirm={handleConfirmarExcluirOrigemManual}
+        onClose={() => {
+          setManualOriginToDelete(null)
+          setIsConfirmacaoExcluirOrigemManualOpen(false)
+        }}
+        loading={false}
+      />
 
       {isEntidadeModalOpen && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-zinc-900/45 p-4">
