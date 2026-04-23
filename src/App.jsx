@@ -4044,7 +4044,7 @@ function App() {
           <div>
             <p className="text-sm font-semibold text-cyan-900">Origem manual de recurso</p>
             <p className="text-xs text-cyan-800">
-              Cadastre fomentos fora do CSV e siga no fluxo normal de destinações.
+              Cadastre processos como origem de fomento fora do arquivo de importação, para seguir no fluxo normal de destinações.
             </p>
           </div>
           <button
