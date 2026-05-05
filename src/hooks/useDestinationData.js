@@ -215,22 +215,13 @@ export function useDestinationData({
 
   const totalDestinadoPagos = useMemo(
     () =>
-      destinacoes
-        .filter((item) => item.statusPagamento === 'pago')
-        .reduce((acc, item) => acc + Number(item.valorDestinado || 0), 0),
+      destinacoes.reduce((acc, item) => acc + Number(item.valorPagoAcumulado || 0), 0),
     [destinacoes],
   )
 
   const saldoAPagar = useMemo(
-    () =>
-      destinacoes
-        .filter((item) => item.statusPagamento !== 'pago')
-        .reduce(
-          (acc, item) =>
-            acc + Math.max(0, Number(item.valorDestinado || 0) - Number(item.valorPagoAcumulado || 0)),
-          0,
-        ),
-    [destinacoes],
+    () => Math.max(0, totalDestinado - totalDestinadoPagos),
+    [totalDestinado, totalDestinadoPagos],
   )
 
   const saldoSemDestinacao = useMemo(
