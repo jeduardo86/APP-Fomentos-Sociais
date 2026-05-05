@@ -1301,10 +1301,12 @@ function App() {
   const linhasDetalhadasGerencial = useMemo(
     () => {
       const cnpjByProcesso = new Map()
+      const processoDataByProcesso = new Map()
       baseCsv.forEach((item) => {
         const id = String(item.processoId || '').trim()
         if (id) {
           cnpjByProcesso.set(id, String(item.cnpj || '').trim())
+          processoDataByProcesso.set(id, item)
         }
       })
 
@@ -1316,6 +1318,15 @@ function App() {
           
           let cnpjEmpresa = cnpjByProcesso.get(String(item.processoId || '').trim()) || item.cnpj || ''
           const cnpjDigits = sanitizeCNPJ(cnpjEmpresa)
+
+          const processoData = processoDataByProcesso.get(String(item.processoId || '').trim())
+          const baseCalculoValor = processoData ? getBaseCalculoFomentoFromProcess(processoData) : 0
+          const cnpjEntidade = String(entidade?.cnpj || '').trim()
+          const cnpjEntidadeMasked = cnpjEntidade ? maskCNPJ(sanitizeCNPJ(cnpjEntidade)) : 'Não informado'
+
+          const totalFomento = processoData ? Number(getValorFomentoFromProcess(processoData) || 0) : 0
+          const valorPago = Number(item.valorPagoAcumulado || 0)
+          const saldoAPagar = Math.max(0, Number(item.valorDestinado || 0) - valorPago)
 
           return {
             id: String(item.id || '').trim(),
@@ -1334,6 +1345,11 @@ function App() {
             status: String(item.statusPagamento || 'pendente').trim() || 'pendente',
             valorCents,
             valor: fromMoneyCents(valorCents),
+            cnpjEntidade: cnpjEntidadeMasked,
+            baseCalculoValor,
+            totalFomento,
+            valorPago,
+            saldoAPagar,
           }
         })
         .sort((a, b) => {
@@ -2330,6 +2346,11 @@ function App() {
         'UF',
         'Status',
         'Valor destinado',
+        'CNPJ da entidade',
+        'Valor da base de calculo da destinação',
+        'Total do fomento',
+        'Valores pagos',
+        'Saldo a pagar',
       ]
 
       const detailRows = linhasDetalhadasGerencial.map((item) => [
@@ -2347,6 +2368,11 @@ function App() {
         item.estado,
         getStatusPagamentoLabel(item.status),
         formatCurrency(item.valor),
+        item.cnpjEntidade,
+        formatCurrency(item.baseCalculoValor),
+        formatCurrency(item.totalFomento),
+        formatCurrency(item.valorPago),
+        formatCurrency(item.saldoAPagar),
       ])
 
       const lines = [
