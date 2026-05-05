@@ -1795,6 +1795,37 @@ function App() {
     })
   }, [pagas, filtroDestinacaoPaga])
 
+  const subtotaisPendentes = useMemo(() => {
+    const totalDestinado = pendentesFiltradosPagamento.reduce(
+      (acc, item) => acc + Number(item.valorDestinado || 0),
+      0,
+    )
+    const totalPago = pendentesFiltradosPagamento.reduce(
+      (acc, item) => acc + Number(item.valorPagoAcumulado || 0),
+      0,
+    )
+    return {
+      totalDestinado,
+      totalPago,
+      totalSaldo: Math.max(0, totalDestinado - totalPago),
+    }
+  }, [pendentesFiltradosPagamento])
+
+  const subtotaisPagas = useMemo(() => {
+    const totalDestinado = pagasFiltradas.reduce(
+      (acc, item) => acc + Number(item.valorDestinado || 0),
+      0,
+    )
+    const totalPago = pagasFiltradas.reduce(
+      (acc, item) => acc + Number(item.valorPagoAcumulado || item.valorDestinado || 0),
+      0,
+    )
+    return {
+      totalDestinado,
+      totalPago,
+    }
+  }, [pagasFiltradas])
+
   const destinacaoSelecionadaPagamento = useMemo(
     () => pendentes.find((item) => item.id === pagamentoForm.destinacaoId) || null,
     [pendentes, pagamentoForm.destinacaoId],
@@ -4783,6 +4814,23 @@ function App() {
                     </p>
                   </div>
 
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-3 sm:p-4">
+                    <div className="grid grid-cols-3 gap-3 text-center text-sm">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.08em] text-zinc-500">Total destinado</p>
+                        <p className="text-lg font-bold text-zinc-900">{formatCurrency(subtotaisPendentes.totalDestinado)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.08em] text-zinc-500">Total pago</p>
+                        <p className="text-lg font-bold text-emerald-700">{formatCurrency(subtotaisPendentes.totalPago)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.08em] text-zinc-500">Total saldo</p>
+                        <p className="text-lg font-bold text-amber-700">{formatCurrency(subtotaisPendentes.totalSaldo)}</p>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {pendentesFiltradosPagamento.length === 0 && (
                       <article className="rounded-2xl border border-slate-200 bg-white/85 p-4 text-sm text-zinc-500 sm:col-span-2 xl:col-span-3">
@@ -5225,6 +5273,19 @@ function App() {
                       onChange={(event) => setFiltroDestinacaoPaga(event.target.value)}
                       placeholder="Digite operador lotérico, entidade ou nº do processo"
                     />
+                  </div>
+
+                  <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-3 sm:p-4">
+                    <div className="grid grid-cols-2 gap-3 text-center text-sm">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.08em] text-zinc-500">Total destinado</p>
+                        <p className="text-lg font-bold text-zinc-900">{formatCurrency(subtotaisPagas.totalDestinado)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.08em] text-zinc-500">Total pago</p>
+                        <p className="text-lg font-bold text-emerald-700">{formatCurrency(subtotaisPagas.totalPago)}</p>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
