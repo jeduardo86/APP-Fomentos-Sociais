@@ -2358,7 +2358,7 @@ function App() {
         item.competencia,
         item.ano,
         item.processoId,
-        item.termo,
+        item.termo.replace(/[^\d]/g, ''),
         item.empresa,
         item.cnpjEmpresa,
         item.destino,
