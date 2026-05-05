@@ -315,17 +315,6 @@ export async function createDestinacao(payload) {
   const existentesQuery = query(collections.destinacoes, where('processoId', '==', processoId))
   const existentesSnapshot = await getDocs(existentesQuery)
 
-  // Verificar se já existe destinação para a mesma competência
-  const competencia = String(payload?.competencia || '').trim()
-  const duplicada = existentesSnapshot.docs.some((doc) => {
-    const data = doc.data()
-    return String(data?.competencia || '').trim() === competencia
-  })
-
-  if (duplicada) {
-    throw new Error('Já existe uma destinação para este processo nesta competência. Para destinar novamente, use uma competência diferente.')
-  }
-
   const totalJaDestinadoCents = existentesSnapshot.docs.reduce(
     (acc, entry) => acc + toMoneyCents(entry.data().valorDestinado),
     0,
@@ -384,7 +373,7 @@ export async function updateDestinacao(destinacaoId, payload, userId) {
       throw new Error('Valor destinado não pode ser alterado quando já houver pagamento registrado.')
     }
 
-    await updateDoc(ref, {
+    const updateFields = {
       entidadeId: String(payload?.entidadeId || '').trim(),
       entidadeNome: String(payload?.entidadeNome || '').trim(),
       competencia: String(payload?.competencia || '').trim(),
@@ -392,7 +381,17 @@ export async function updateDestinacao(destinacaoId, payload, userId) {
       observacao: String(payload?.observacao || '').trim(),
       updatedAt: new Date().toISOString(),
       updatedBy: userId || '',
-    })
+    }
+
+    // Inclui dados de pagamento se fornecidos no payload
+    if (payload?.pgtoData !== undefined) {
+      updateFields.pgtoData = String(payload.pgtoData || '').trim()
+    }
+    if (payload?.formaPgto !== undefined) {
+      updateFields.formaPgto = String(payload.formaPgto || '').trim()
+    }
+
+    await updateDoc(ref, updateFields)
 
     return
   }
@@ -463,6 +462,38 @@ export async function deleteDestinacao(destinacaoId, userId) {
   if (userId) {
     console.info(`Destinação ${destinacaoId} excluída por ${userId}.`)
   }
+}
+
+export async function updateDestinacaoPayment(destinacaoId, pgtoData, formaPgto, userId) {
+  if (!destinacaoId) {
+    throw new Error('Destinação inválida para edição de pagamento.')
+  }
+
+  if (!pgtoData || !formaPgto) {
+    throw new Error('Informe data e forma de pagamento.')
+  }
+
+  const ref = doc(db, 'destinacoes', destinacaoId)
+  const snapshot = await getDoc(ref)
+
+  if (!snapshot.exists()) {
+    throw new Error('Destinação não encontrada para edição de pagamento.')
+  }
+
+  const data = snapshot.data()
+  const valorPagoAcumulado = Number(data?.valorPagoAcumulado || 0)
+  const qtdPagamentos = Number(data?.qtdPagamentos || 0)
+
+  if (valorPagoAcumulado <= 0 && qtdPagamentos <= 0) {
+    throw new Error('Não há pagamento registrado para editar nesta destinação.')
+  }
+
+  await updateDoc(ref, {
+    pgtoData,
+    formaPgto,
+    updatedAt: new Date().toISOString(),
+    updatedBy: userId || '',
+  })
 }
 
 export async function registerDestinacaoPayment(destinacaoId, pgtoData, formaPgto, valorPago, userId) {

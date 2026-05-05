@@ -35,6 +35,8 @@ import {
   createEntidade,
   ensureUserProfile,
   registerDestinacaoPayment,
+  updateDestinacaoPayment,
+
   saveCsvLinkConfig,
   subscribeAppSettings,
   subscribeCollection,
@@ -502,8 +504,11 @@ function createInitialEditDestinacaoForm() {
     processoSolicitacaoEntidade: '',
     observacao: '',
     valorDestinado: 0,
+    pgtoData: '',
+    formaPgto: '',
   }
 }
+
 
 function App() {
     // Sugestão de alteração de senha no primeiro acesso
@@ -3108,8 +3113,11 @@ function App() {
       processoSolicitacaoEntidade: String(item.processoSolicitacaoEntidade || '').trim(),
       observacao: String(item.observacao || '').trim(),
       valorDestinado: Number(item.valorDestinado || 0),
+      pgtoData: String(item.pgtoData || '').trim(),
+      formaPgto: String(item.formaPgto || '').trim(),
     })
   }
+
 
   function handleCancelarEdicaoDestinacao() {
     setEditingDestinacaoId('')
@@ -3144,25 +3152,36 @@ function App() {
     }
 
     try {
-      await updateDestinacao(
-        item.id,
-        {
-          entidadeId: editDestinacaoForm.entidadeId,
-          entidadeNome: entidade?.nome || '',
-          solicitacaoData: editDestinacaoForm.solicitacaoData,
-          competencia: toCompetenciaMask(editDestinacaoForm.competencia),
-          processoSolicitacaoEntidade: editDestinacaoForm.processoSolicitacaoEntidade,
-          observacao: editDestinacaoForm.observacao,
-          valorDestinado,
-        },
-        user.uid,
-      )
+      // Monta payload incluindo dados de pagamento se houver
+      const payload = {
+        entidadeId: editDestinacaoForm.entidadeId,
+        entidadeNome: entidade?.nome || '',
+        solicitacaoData: editDestinacaoForm.solicitacaoData,
+        competencia: toCompetenciaMask(editDestinacaoForm.competencia),
+        processoSolicitacaoEntidade: editDestinacaoForm.processoSolicitacaoEntidade,
+        observacao: editDestinacaoForm.observacao,
+        valorDestinado,
+      }
+
+      // Se houver pagamento registrado, inclui dados de pagamento no payload
+      const hasPayment = Number(item.valorPagoAcumulado || 0) > 0 || Number(item.qtdPagamentos || 0) > 0
+      if (hasPayment) {
+        const pgtoData = String(editDestinacaoForm.pgtoData || '').trim()
+        const formaPgto = String(editDestinacaoForm.formaPgto || '').trim()
+        if (pgtoData && formaPgto) {
+          payload.pgtoData = pgtoData
+          payload.formaPgto = formaPgto
+        }
+      }
+
+      await updateDestinacao(item.id, payload, user.uid)
 
       handleCancelarEdicaoDestinacao()
       toast.success('Destinação atualizada com sucesso.')
     } catch (error) {
       toast.error(error.message || 'Não foi possível atualizar a destinação.')
     }
+
   }
 
   async function handleExcluirDestinacao(item) {
@@ -5013,6 +5032,51 @@ function App() {
                                 />
                               </div>
 
+                              {hasPagamentoRegistrado && (
+                                <>
+                                  <div>
+                                    <label className="field-label" htmlFor={`edit-pgtoData-${item.id}`}>
+                                      Data de pagamento
+                                    </label>
+                                    <input
+                                      id={`edit-pgtoData-${item.id}`}
+                                      className="field-input"
+                                      type="date"
+                                      value={editDestinacaoForm.pgtoData}
+                                      onChange={(event) =>
+                                        setEditDestinacaoForm((current) => ({
+                                          ...current,
+                                          pgtoData: event.target.value,
+                                        }))
+                                      }
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="field-label" htmlFor={`edit-formaPgto-${item.id}`}>
+                                      Forma de pagamento
+                                    </label>
+                                    <select
+                                      id={`edit-formaPgto-${item.id}`}
+                                      className="field-input"
+                                      value={editDestinacaoForm.formaPgto}
+                                      onChange={(event) =>
+                                        setEditDestinacaoForm((current) => ({
+                                          ...current,
+                                          formaPgto: event.target.value,
+                                        }))
+                                      }
+                                    >
+                                      {pagamentoOptions.map((option) => (
+                                        <option key={option} value={option}>
+                                          {option}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </>
+                              )}
+
                               <div className="sm:col-span-2 flex flex-wrap justify-end gap-2">
                                 <button
                                   type="button"
@@ -5029,6 +5093,7 @@ function App() {
                           )}
 
                           {isSelecionada && (
+
                             <form
                               className="mt-4 grid gap-3 rounded-xl border border-cyan-200 bg-white p-3 sm:grid-cols-2"
                               onClick={(event) => event.stopPropagation()}
@@ -5337,6 +5402,47 @@ function App() {
                               />
                             </div>
 
+                            <div>
+                              <label className="field-label" htmlFor={`edit-paga-pgtoData-${item.id}`}>
+                                Data de pagamento
+                              </label>
+                              <input
+                                id={`edit-paga-pgtoData-${item.id}`}
+                                className="field-input"
+                                type="date"
+                                value={editDestinacaoForm.pgtoData}
+                                onChange={(event) =>
+                                  setEditDestinacaoForm((current) => ({
+                                    ...current,
+                                    pgtoData: event.target.value,
+                                  }))
+                                }
+                              />
+                            </div>
+
+                            <div>
+                              <label className="field-label" htmlFor={`edit-paga-formaPgto-${item.id}`}>
+                                Forma de pagamento
+                              </label>
+                              <select
+                                id={`edit-paga-formaPgto-${item.id}`}
+                                className="field-input"
+                                value={editDestinacaoForm.formaPgto}
+                                onChange={(event) =>
+                                  setEditDestinacaoForm((current) => ({
+                                    ...current,
+                                    formaPgto: event.target.value,
+                                  }))
+                                }
+                              >
+                                {pagamentoOptions.map((option) => (
+                                  <option key={option} value={option}>
+                                    {option}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
                             <div className="sm:col-span-2 flex flex-wrap justify-end gap-2">
                               <button
                                 type="button"
@@ -5356,6 +5462,7 @@ function App() {
                   </div>
                 </section>
               )}
+
 
               {activeTab === 'gerencial' && (
                 <section className="mt-5 space-y-4 animate-in">
