@@ -2331,6 +2331,8 @@ function App() {
     setIsExportingGerencialCsv(true)
 
     try {
+      const formatCurrencyForCsv = (value) => String(formatCurrency(value)).replace(/^R\$\s*/, '')
+
       const header = [
         'Data solicitação',
         'Competência',
@@ -2367,12 +2369,12 @@ function App() {
         item.municipio,
         item.estado,
         getStatusPagamentoLabel(item.status),
-        formatCurrency(item.valor),
+        formatCurrencyForCsv(item.valor),
         item.cnpjEntidade,
-        formatCurrency(item.baseCalculoValor),
-        formatCurrency(item.totalFomento),
-        formatCurrency(item.valorPago),
-        formatCurrency(item.saldoAPagar),
+        formatCurrencyForCsv(item.baseCalculoValor),
+        formatCurrencyForCsv(item.totalFomento),
+        formatCurrencyForCsv(item.valorPago),
+        formatCurrencyForCsv(item.saldoAPagar),
       ])
 
       const lines = [
@@ -7869,6 +7871,7 @@ function App() {
 }
 
 export default App
+
 
 
 
