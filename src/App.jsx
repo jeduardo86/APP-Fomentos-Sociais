@@ -526,6 +526,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('gerencial')
   const [activeCadastroTab, setActiveCadastroTab] = useState('empresas')
   const [activeReportTab, setActiveReportTab] = useState('verificacao')
+  const [reportMensalAno, setReportMensalAno] = useState('2025')
   const [reportProcessoId, setReportProcessoId] = useState('')
   const [reportDataEmissao, setReportDataEmissao] = useState(todayInputDate)
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
@@ -1368,6 +1369,54 @@ function App() {
     [destinacoesGerencialFiltradas, entidadesById, gerencialCategoriaLabelByValue, baseCsv],
   )
 
+  const processosPendentesDestinacao = useMemo(
+    () => {
+      const processosComDestinacao = new Set(
+        destinacoes.map((item) => String(item.processoId || '').trim()).filter(Boolean),
+      )
+
+      return baseCsv
+        .filter((item) => {
+          const processoId = String(item.processoId || '').trim()
+          if (!processoId) {
+            return false
+          }
+
+          // Processo sem nenhuma destinação
+          if (!processosComDestinacao.has(processoId)) {
+            return true
+          }
+
+          // Processo com destinação mas com saldo disponível
+          const valorFomento = Number(getValorFomentoFromProcess(item) || 0)
+          const jaDestinado = Number(totalDestinadoPorProcesso[processoId] || 0)
+          return valorFomento - jaDestinado > 0.009
+        })
+        .map((item) => {
+          const processoId = String(item.processoId || '').trim()
+          const valorFomento = Number(getValorFomentoFromProcess(item) || 0)
+          const jaDestinado = Number(totalDestinadoPorProcesso[processoId] || 0)
+          const saldoDisponivel = Math.max(0, valorFomento - jaDestinado)
+          const cnpjDigits = sanitizeCNPJ(item.cnpj)
+
+          return {
+            processoId,
+            termo: String(item.termo || '').trim(),
+            empresa: String(item.empresa || 'Não informado').trim(),
+            cnpjEmpresa: cnpjDigits ? maskCNPJ(cnpjDigits) : 'Não informado',
+            produto: String(item.produto || '').trim(),
+            dataAutorizacao: String(item.dataAutorizacao || '').trim(),
+            valorFomento,
+            jaDestinado,
+            saldoDisponivel,
+            status: 'Pendentes de destinação',
+          }
+        })
+        .sort((a, b) => a.processoId.localeCompare(b.processoId, 'pt-BR', { numeric: true, sensitivity: 'base' }))
+    },
+    [baseCsv, destinacoes, totalDestinadoPorProcesso],
+  )
+
   const processosEmpresa = useMemo(() => {
     if (!empresaSelecionada) {
       return []
@@ -1732,6 +1781,103 @@ function App() {
     () => totalEmFomentos - totalDestinado,
     [totalEmFomentos, totalDestinado],
   )
+
+  const dadosRelatorioMensal = useMemo(() => {
+    const meses = [
+      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+    ]
+
+    const anoSelecionado = reportMensalAno
+
+    // Mapa de processoId -> dataAutorizacao para lookup rápido
+    const dataAutorizacaoPorProcesso = new Map()
+    baseCsv.forEach((item) => {
+      const processoId = String(item.processoId || '').trim()
+      const dataAutorizacao = String(item.dataAutorizacao || '').trim()
+      if (processoId && dataAutorizacao) {
+        dataAutorizacaoPorProcesso.set(processoId, dataAutorizacao)
+      }
+    })
+
+    // Função auxiliar para extrair mês/ano de uma data no formato ISO (YYYY-MM-DD)
+    function getMesAnoFromData(dataStr) {
+      const match = dataStr.match(/^(\d{4})-(\d{2})-\d{2}$/)
+      if (match) {
+        return { ano: match[1], mes: match[2] }
+      }
+      return null
+    }
+
+    // Total de fomento disponível no ano (baseado na dataAutorizacao dos processos do CSV)
+    const totalFomentoAno = baseCsv.reduce((acc, item) => {
+      const dataAutorizacao = String(item.dataAutorizacao || '').trim()
+      const mesAno = getMesAnoFromData(dataAutorizacao)
+      if (mesAno && mesAno.ano === anoSelecionado) {
+        return acc + getValorFomentoFromProcess(item)
+      }
+      return acc
+    }, 0)
+
+    const dadosPorMes = meses.map((_, index) => {
+      const mes = String(index + 1).padStart(2, '0')
+
+      // Fomento do mês: baseado na dataAutorizacao dos processos do CSV
+      const fomentoMes = baseCsv.reduce((acc, item) => {
+        const dataAutorizacao = String(item.dataAutorizacao || '').trim()
+        const mesAno = getMesAnoFromData(dataAutorizacao)
+        if (mesAno && mesAno.mes === mes && mesAno.ano === anoSelecionado) {
+          return acc + getValorFomentoFromProcess(item)
+        }
+        return acc
+      }, 0)
+
+      // Destinações do mês: baseado na dataAutorizacao do processo associado
+      const destinacoesMes = destinacoes.filter((item) => {
+        const processoId = String(item.processoId || '').trim()
+        const dataAutorizacao = dataAutorizacaoPorProcesso.get(processoId)
+        if (dataAutorizacao) {
+          const mesAno = getMesAnoFromData(dataAutorizacao)
+          return mesAno && mesAno.mes === mes && mesAno.ano === anoSelecionado
+        }
+        // Fallback: usar competência ou solicitaçãoData se não houver dataAutorizacao
+        const competencia = String(item.competencia || '').trim()
+        const competenciaMatch = competencia.match(/^(\d{2})\/(\d{4})$/)
+        if (competenciaMatch) {
+          return competenciaMatch[1] === mes && competenciaMatch[2] === anoSelecionado
+        }
+        const solicitacaoData = String(item.solicitacaoData || '').trim()
+        const dataMatch = solicitacaoData.match(/^(\d{4})-(\d{2})-\d{2}$/)
+        if (dataMatch) {
+          return dataMatch[2] === mes && dataMatch[1] === anoSelecionado
+        }
+        return false
+      })
+
+      const totalDestinado = destinacoesMes.reduce(
+        (acc, item) => acc + Number(item.valorDestinado || 0),
+        0,
+      )
+
+      // Saldo a destinar = total de fomento no mês - total destinado no mês
+      const saldoADestinar = Math.max(0, fomentoMes - totalDestinado)
+
+      return {
+        mes: meses[index],
+        totalDestinado,
+        saldoADestinar,
+      }
+    })
+
+    const totalGeralDestinado = dadosPorMes.reduce((acc, item) => acc + item.totalDestinado, 0)
+    const totalGeralSaldo = dadosPorMes.reduce((acc, item) => acc + item.saldoADestinar, 0)
+
+    return {
+      dadosPorMes,
+      totalGeralDestinado,
+      totalGeralSaldo,
+    }
+  }, [destinacoes, baseCsv, reportMensalAno])
 
   const pendentes = useMemo(() => {
     return destinacoes
@@ -2323,7 +2469,7 @@ function App() {
       return
     }
 
-    if (!linhasDetalhadasGerencial.length) {
+    if (!linhasDetalhadasGerencial.length && !processosPendentesDestinacao.length) {
       toast.error('Não há dados para exportar no filtro atual.')
       return
     }
@@ -2353,6 +2499,7 @@ function App() {
         'Total do fomento',
         'Valores pagos',
         'Saldo a pagar',
+        'Data autorização',
       ]
 
       const detailRows = linhasDetalhadasGerencial.map((item) => [
@@ -2377,10 +2524,42 @@ function App() {
         formatCurrencyForCsv(item.saldoAPagar),
       ])
 
+      // Linhas dos processos pendentes de destinação
+      const pendentesRows = processosPendentesDestinacao.map((item) => [
+        '', // Data solicitação
+        '', // Competência
+        '', // Ano
+        item.processoId,
+        item.termo.replace(/[^\d]/g, ''),
+        item.empresa,
+        item.cnpjEmpresa,
+        item.produto,
+        '', // Entidade
+        '', // Categoria
+        '', // Município
+        '', // UF
+        item.status,
+        '', // Valor destinado
+        '', // CNPJ da entidade
+        '', // Valor da base de calculo
+        formatCurrencyForCsv(item.valorFomento),
+        '', // Valores pagos
+        formatCurrencyForCsv(item.saldoDisponivel),
+        formatDateBR(item.dataAutorizacao),
+      ])
+
       const lines = [
         header.map((item) => escapeCsvValue(item)).join(';'),
         ...detailRows.map((row) => row.map((item) => escapeCsvValue(item)).join(';')),
       ]
+
+      // Se houver processos pendentes, adiciona um separador e as linhas de pendentes
+      if (pendentesRows.length > 0) {
+        lines.push('')
+        lines.push(escapeCsvValue('PROCESSOS PENDENTES DE DESTINAÇÃO'))
+        lines.push('')
+        lines.push(...pendentesRows.map((row) => row.map((item) => escapeCsvValue(item)).join(';')))
+      }
 
       const csvContent = '\uFEFF' + lines.join('\n')
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -6827,6 +7006,13 @@ function App() {
                       Informações gerenciais
                     </button>
                   )}
+                  <button
+                    type="button"
+                    className={activeReportTab === 'mensal' ? 'tab tab-active' : 'tab'}
+                    onClick={() => setActiveReportTab('mensal')}
+                  >
+                    Relatório Mensal
+                  </button>
                 </div>
               </div>
 
@@ -7045,6 +7231,63 @@ function App() {
                         </p>
                       </footer>
                     </article>
+                  </div>
+                </>
+              )}
+
+              {activeReportTab === 'mensal' && (
+                <>
+                  <div className="grid gap-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div>
+                      <label className="field-label" htmlFor="mensalAno">
+                        Ano
+                      </label>
+                      <select
+                        id="mensalAno"
+                        className="field-input"
+                        value={reportMensalAno}
+                        onChange={(event) => setReportMensalAno(event.target.value)}
+                      >
+                        <option value="2025">2025</option>
+                        <option value="2026">2026</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+                    <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                      <thead className="bg-slate-100/90 text-zinc-600">
+                        <tr>
+                          <th className="px-4 py-3">Mês</th>
+                          <th className="px-4 py-3 text-right">Total Destinado</th>
+                          <th className="px-4 py-3 text-right">Saldo a Destinar</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {dadosRelatorioMensal.dadosPorMes.map((item) => (
+                          <tr key={item.mes} className="even:bg-slate-50/70">
+                            <td className="px-4 py-3 font-medium text-zinc-900">{item.mes}</td>
+                            <td className="px-4 py-3 text-right text-zinc-700">
+                              {formatCurrency(item.totalDestinado)}
+                            </td>
+                            <td className="px-4 py-3 text-right text-zinc-700">
+                              {formatCurrency(item.saldoADestinar)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-slate-100/80 font-semibold">
+                        <tr>
+                          <td className="px-4 py-3 text-zinc-900">Total</td>
+                          <td className="px-4 py-3 text-right text-zinc-900">
+                            {formatCurrency(dadosRelatorioMensal.totalGeralDestinado)}
+                          </td>
+                          <td className="px-4 py-3 text-right text-zinc-900">
+                            {formatCurrency(dadosRelatorioMensal.totalGeralSaldo)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
                 </>
               )}
