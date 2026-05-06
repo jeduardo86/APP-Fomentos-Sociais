@@ -62,7 +62,7 @@ const additionalMenuTabs = [
 ]
 
 const destinationTabs = [
-  { id: 'gerencial', label: 'Painel gerencial' },
+  { id: 'gerencial', label: 'Painel Operacional' },
   { id: 'destinacao', label: 'Destinações' },
   { id: 'pagamento', label: 'Pagamento' },
   { id: 'pagas', label: 'Destinações pagas' },
@@ -5546,7 +5546,7 @@ function App() {
 
               {activeTab === 'gerencial' && (
                 <section className="mt-5 space-y-4 animate-in">
-                  <h2 className="text-lg font-semibold text-zinc-900">Painel gerencial por operador lotérico</h2>
+                  <h2 className="text-lg font-semibold text-zinc-900">Painel Operacional por operador lotérico</h2>
                   <p className="text-sm text-zinc-600">
                     Visão consolidada para acompanhamento de saldo a destinar e saldo a pagar por operador lotérico.
                   </p>
