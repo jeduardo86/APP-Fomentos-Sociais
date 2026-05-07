@@ -1351,6 +1351,9 @@ function App() {
             totalFomento,
             valorPago,
             saldoAPagar,
+            dataAutorizacao: processoData
+              ? String(processoData.dataAutorizacao || item.solicitacaoData || '').trim()
+              : String(item.solicitacaoData || '').trim(),
           }
         })
         .sort((a, b) => {
@@ -2501,84 +2504,87 @@ function App() {
       const formatCurrencyForCsv = (value) => String(formatCurrency(value)).replace(/^R\$\s*/, '')
 
       const header = [
-        'Data solicitação',
-        'Competência',
-        'Ano',
         'Processo',
         'Termo',
         'Operador lotérico',
         'CNPJ',
+        'Data autorização',
+        'Competência',
+        'Ano',
+        'Data solicitação',
         'Destino',
         'Entidade',
+        'CNPJ da entidade',
         'Categoria',
         'Município',
         'UF',
-        'Status',
-        'Valor destinado',
-        'CNPJ da entidade',
         'Valor da base de calculo da destinação',
+        'Status',
         'Total do fomento',
+        'Valor destinado',
         'Valores pagos',
         'Saldo a pagar',
-        'Data autorização',
       ]
 
       const detailRows = linhasDetalhadasGerencial.map((item) => [
-        formatDateBR(item.solicitacaoData),
-        item.competencia,
-        item.ano,
         item.processoId,
         item.termo.replace(/[^\d]/g, ''),
         item.empresa,
         item.cnpjEmpresa,
+        formatDateBR(item.dataAutorizacao),
+        item.competencia,
+        item.ano,
+        formatDateBR(item.solicitacaoData),
         item.destino,
         item.entidade,
+        item.cnpjEntidade,
         item.categoria,
         item.municipio,
         item.estado,
-        getStatusPagamentoLabel(item.status),
-        formatCurrencyForCsv(item.valor),
-        item.cnpjEntidade,
         formatCurrencyForCsv(item.baseCalculoValor),
+        getStatusPagamentoLabel(item.status),
         formatCurrencyForCsv(item.totalFomento),
+        formatCurrencyForCsv(item.valor),
         formatCurrencyForCsv(item.valorPago),
         formatCurrencyForCsv(item.saldoAPagar),
       ])
 
       // Linhas dos processos pendentes de destinação
-      const pendentesRows = processosPendentesDestinacao.map((item) => [
-        '', // Data solicitação
-        '', // Competência
-        '', // Ano
-        item.processoId,
-        item.termo.replace(/[^\d]/g, ''),
-        item.empresa,
-        item.cnpjEmpresa,
-        item.produto,
-        '', // Entidade
-        '', // Categoria
-        '', // Município
-        '', // UF
-        item.status,
-        '', // Valor destinado
-        '', // CNPJ da entidade
-        '', // Valor da base de calculo
-        formatCurrencyForCsv(item.valorFomento),
-        '', // Valores pagos
-        formatCurrencyForCsv(item.saldoDisponivel),
-        formatDateBR(item.dataAutorizacao),
-      ])
+      const pendentesRows = processosPendentesDestinacao.map((item) => {
+        const competenciaFallback = competenciaFromDate(item.dataAutorizacao)
+        const anoFallback = item.dataAutorizacao ? String(item.dataAutorizacao).slice(0, 4) : ''
+
+        return [
+          item.processoId,
+          item.termo.replace(/[^\d]/g, ''),
+          item.empresa,
+          item.cnpjEmpresa,
+          formatDateBR(item.dataAutorizacao),
+          competenciaFallback, // Competência (derivada da data de autorização)
+          anoFallback, // Ano (derivado da data de autorização)
+          '', // Data solicitação
+          item.produto,
+          '', // Entidade
+          '', // CNPJ da entidade
+          '', // Categoria
+          '', // Município
+          '', // UF
+          '', // Valor da base de calculo
+          item.status,
+          formatCurrencyForCsv(item.valorFomento),
+          '', // Valor destinado
+          '', // Valores pagos
+          formatCurrencyForCsv(item.saldoDisponivel),
+        ]
+      })
 
       const lines = [
         header.map((item) => escapeCsvValue(item)).join(';'),
         ...detailRows.map((row) => row.map((item) => escapeCsvValue(item)).join(';')),
       ]
 
-      // Se houver processos pendentes, adiciona um separador e as linhas de pendentes
+      // Se houver processos pendentes, adiciona as linhas de pendentes
       if (pendentesRows.length > 0) {
-        lines.push('')
-        lines.push(escapeCsvValue('PROCESSOS PENDENTES DE DESTINAÇÃO'))
-        lines.push('')
         lines.push(...pendentesRows.map((row) => row.map((item) => escapeCsvValue(item)).join(';')))
       }
 
@@ -7013,6 +7019,13 @@ function App() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
+                    className={activeReportTab === 'mensal' ? 'tab tab-active' : 'tab'}
+                    onClick={() => setActiveReportTab('mensal')}
+                  >
+                    Relatório Mensal
+                  </button>
+                  <button
+                    type="button"
                     className={activeReportTab === 'verificacao' ? 'tab tab-active' : 'tab'}
                     onClick={() => setActiveReportTab('verificacao')}
                   >
@@ -7027,13 +7040,6 @@ function App() {
                       Informações gerenciais
                     </button>
                   )}
-                  <button
-                    type="button"
-                    className={activeReportTab === 'mensal' ? 'tab tab-active' : 'tab'}
-                    onClick={() => setActiveReportTab('mensal')}
-                  >
-                    Relatório Mensal
-                  </button>
                 </div>
               </div>
 
