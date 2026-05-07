@@ -526,7 +526,7 @@ function App() {
   const [activeTab, setActiveTab] = useState('gerencial')
   const [activeCadastroTab, setActiveCadastroTab] = useState('empresas')
   const [activeReportTab, setActiveReportTab] = useState('verificacao')
-  const [reportMensalAno, setReportMensalAno] = useState('2025')
+  const [reportMensalAno, setReportMensalAno] = useState('2026')
   const [reportProcessoId, setReportProcessoId] = useState('')
   const [reportDataEmissao, setReportDataEmissao] = useState(todayInputDate)
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false)
@@ -1782,102 +1782,123 @@ function App() {
     [totalEmFomentos, totalDestinado],
   )
 
-  const dadosRelatorioMensal = useMemo(() => {
-    const meses = [
-      'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-      'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
-    ]
+    const dadosRelatorioMensal = useMemo(() => {
+      const meses = [
+        'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+        'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+      ]
 
-    const anoSelecionado = reportMensalAno
+      const anoSelecionado = reportMensalAno
 
-    // Mapa de processoId -> dataAutorizacao para lookup rápido
-    const dataAutorizacaoPorProcesso = new Map()
-    baseCsv.forEach((item) => {
-      const processoId = String(item.processoId || '').trim()
-      const dataAutorizacao = String(item.dataAutorizacao || '').trim()
-      if (processoId && dataAutorizacao) {
-        dataAutorizacaoPorProcesso.set(processoId, dataAutorizacao)
-      }
-    })
-
-    // Função auxiliar para extrair mês/ano de uma data no formato ISO (YYYY-MM-DD)
-    function getMesAnoFromData(dataStr) {
-      const match = dataStr.match(/^(\d{4})-(\d{2})-\d{2}$/)
-      if (match) {
-        return { ano: match[1], mes: match[2] }
-      }
-      return null
-    }
-
-    // Total de fomento disponível no ano (baseado na dataAutorizacao dos processos do CSV)
-    const totalFomentoAno = baseCsv.reduce((acc, item) => {
-      const dataAutorizacao = String(item.dataAutorizacao || '').trim()
-      const mesAno = getMesAnoFromData(dataAutorizacao)
-      if (mesAno && mesAno.ano === anoSelecionado) {
-        return acc + getValorFomentoFromProcess(item)
-      }
-      return acc
-    }, 0)
-
-    const dadosPorMes = meses.map((_, index) => {
-      const mes = String(index + 1).padStart(2, '0')
-
-      // Fomento do mês: baseado na dataAutorizacao dos processos do CSV
-      const fomentoMes = baseCsv.reduce((acc, item) => {
-        const dataAutorizacao = String(item.dataAutorizacao || '').trim()
-        const mesAno = getMesAnoFromData(dataAutorizacao)
-        if (mesAno && mesAno.mes === mes && mesAno.ano === anoSelecionado) {
-          return acc + getValorFomentoFromProcess(item)
-        }
-        return acc
-      }, 0)
-
-      // Destinações do mês: baseado na dataAutorizacao do processo associado
-      const destinacoesMes = destinacoes.filter((item) => {
+      // Mapa de processoId -> dataAutorizacao para lookup rápido
+      const dataAutorizacaoPorProcesso = new Map()
+      baseCsv.forEach((item) => {
         const processoId = String(item.processoId || '').trim()
-        const dataAutorizacao = dataAutorizacaoPorProcesso.get(processoId)
-        if (dataAutorizacao) {
-          const mesAno = getMesAnoFromData(dataAutorizacao)
-          return mesAno && mesAno.mes === mes && mesAno.ano === anoSelecionado
+        const dataAutorizacao = String(item.dataAutorizacao || '').trim()
+        if (processoId && dataAutorizacao) {
+          dataAutorizacaoPorProcesso.set(processoId, dataAutorizacao)
         }
-        // Fallback: usar competência ou solicitaçãoData se não houver dataAutorizacao
-        const competencia = String(item.competencia || '').trim()
-        const competenciaMatch = competencia.match(/^(\d{2})\/(\d{4})$/)
-        if (competenciaMatch) {
-          return competenciaMatch[1] === mes && competenciaMatch[2] === anoSelecionado
-        }
-        const solicitacaoData = String(item.solicitacaoData || '').trim()
-        const dataMatch = solicitacaoData.match(/^(\d{4})-(\d{2})-\d{2}$/)
-        if (dataMatch) {
-          return dataMatch[2] === mes && dataMatch[1] === anoSelecionado
-        }
-        return false
       })
 
-      const totalDestinado = destinacoesMes.reduce(
-        (acc, item) => acc + Number(item.valorDestinado || 0),
-        0,
-      )
+      // Função auxiliar para extrair mês/ano de uma data no formato ISO (YYYY-MM-DD)
+      function getMesAnoFromData(dataStr) {
+        const match = dataStr.match(/^(\d{4})-(\d{2})-\d{2}$/)
+        if (match) {
+          return { ano: match[1], mes: match[2] }
+        }
+        return null
+      }
 
-      // Saldo a destinar = total de fomento no mês - total destinado no mês
-      const saldoADestinar = Math.max(0, fomentoMes - totalDestinado)
+      // Função para calcular fomento e destinação de um mês/ano específico
+      function calcularMes(ano, mes) {
+        const fomentoMes = baseCsv.reduce((acc, item) => {
+          const dataAutorizacao = String(item.dataAutorizacao || '').trim()
+          const mesAno = getMesAnoFromData(dataAutorizacao)
+          if (mesAno && mesAno.mes === mes && mesAno.ano === ano) {
+            return acc + getValorFomentoFromProcess(item)
+          }
+          return acc
+        }, 0)
+
+        const destinacoesMes = destinacoes.filter((item) => {
+          const processoId = String(item.processoId || '').trim()
+          const dataAutorizacao = dataAutorizacaoPorProcesso.get(processoId)
+          if (dataAutorizacao) {
+            const mesAno = getMesAnoFromData(dataAutorizacao)
+            return mesAno && mesAno.mes === mes && mesAno.ano === ano
+          }
+          const competencia = String(item.competencia || '').trim()
+          const competenciaMatch = competencia.match(/^(\d{2})\/(\d{4})$/)
+          if (competenciaMatch) {
+            return competenciaMatch[1] === mes && competenciaMatch[2] === ano
+          }
+          const solicitacaoData = String(item.solicitacaoData || '').trim()
+          const dataMatch = solicitacaoData.match(/^(\d{4})-(\d{2})-\d{2}$/)
+          if (dataMatch) {
+            return dataMatch[2] === mes && dataMatch[1] === ano
+          }
+          return false
+        })
+
+        const totalDestinado = destinacoesMes.reduce(
+          (acc, item) => acc + Number(item.valorDestinado || 0),
+          0,
+        )
+
+        const saldoADestinar = Math.max(0, fomentoMes - totalDestinado)
+
+        return { totalDestinado, saldoADestinar }
+      }
+
+      // Coletar todos os anos disponíveis ordenados cronologicamente
+      const anos = [...new Set(baseCsv
+        .map((item) => {
+          const data = String(item.dataAutorizacao || '').trim()
+          const mesAno = getMesAnoFromData(data)
+          return mesAno?.ano
+        })
+        .filter(Boolean)
+      )].sort()
+
+      // Acumular saldo de todos os meses anteriores ao ano selecionado
+      let acumuladoAnterior = 0
+      for (const ano of anos) {
+        if (ano >= anoSelecionado) break
+        for (let i = 1; i <= 12; i++) {
+          const mes = String(i).padStart(2, '0')
+          const { saldoADestinar } = calcularMes(ano, mes)
+          acumuladoAnterior += saldoADestinar
+        }
+      }
+
+      // Calcular os meses do ano selecionado
+      const dadosPorMes = meses.map((_, index) => {
+        const mes = String(index + 1).padStart(2, '0')
+        const { totalDestinado, saldoADestinar } = calcularMes(anoSelecionado, mes)
+        return {
+          mes: meses[index],
+          totalDestinado,
+          saldoADestinar,
+          saldoAcumulado: 0,
+        }
+      })
+
+      // Calcular saldo acumulado mês a mês (partindo do acumulado de anos anteriores)
+      let acumulado = acumuladoAnterior
+      dadosPorMes.forEach((item) => {
+        acumulado += item.saldoADestinar
+        item.saldoAcumulado = acumulado
+      })
+
+      const totalGeralDestinado = dadosPorMes.reduce((acc, item) => acc + item.totalDestinado, 0)
+      const totalGeralSaldo = dadosPorMes.reduce((acc, item) => acc + item.saldoADestinar, 0)
 
       return {
-        mes: meses[index],
-        totalDestinado,
-        saldoADestinar,
+        dadosPorMes,
+        totalGeralDestinado,
+        totalGeralSaldo,
       }
-    })
-
-    const totalGeralDestinado = dadosPorMes.reduce((acc, item) => acc + item.totalDestinado, 0)
-    const totalGeralSaldo = dadosPorMes.reduce((acc, item) => acc + item.saldoADestinar, 0)
-
-    return {
-      dadosPorMes,
-      totalGeralDestinado,
-      totalGeralSaldo,
-    }
-  }, [destinacoes, baseCsv, reportMensalAno])
+    }, [destinacoes, baseCsv, reportMensalAno])
 
   const pendentes = useMemo(() => {
     return destinacoes
@@ -4319,7 +4340,7 @@ function App() {
                 <strong title={formatCurrency(saldoAPagar)}>{formatCurrencyCompact(saldoAPagar)}</strong>
               </article>
               <article className="card-metric text-center sm:col-span-2 xl:col-span-4">
-                <p>Saldo sem destinação</p>
+                <p>Saldo a Destinar</p>
                 <strong title={formatCurrency(saldoSemDestinacao)}>
                   {formatCurrency(saldoSemDestinacao)}
                 </strong>
@@ -7261,6 +7282,7 @@ function App() {
                           <th className="px-4 py-3">Mês</th>
                           <th className="px-4 py-3 text-right">Total Destinado</th>
                           <th className="px-4 py-3 text-right">Saldo a Destinar</th>
+                          <th className="px-4 py-3 text-right">Saldo Acumulado</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -7272,6 +7294,9 @@ function App() {
                             </td>
                             <td className="px-4 py-3 text-right text-zinc-700">
                               {formatCurrency(item.saldoADestinar)}
+                            </td>
+                            <td className="px-4 py-3 text-right text-zinc-700">
+                              {formatCurrency(item.saldoAcumulado)}
                             </td>
                           </tr>
                         ))}
@@ -7285,10 +7310,14 @@ function App() {
                           <td className="px-4 py-3 text-right text-zinc-900">
                             {formatCurrency(dadosRelatorioMensal.totalGeralSaldo)}
                           </td>
+                          <td className="px-4 py-3 text-right text-zinc-900">
+                            {formatCurrency(dadosRelatorioMensal.dadosPorMes[dadosRelatorioMensal.dadosPorMes.length - 1]?.saldoAcumulado || 0)}
+                          </td>
                         </tr>
                       </tfoot>
                     </table>
                   </div>
+
                 </>
               )}
 
